@@ -1654,6 +1654,44 @@ static void newlines_struct_union(chunk_t *start, iarf_e nl_opt, bool leave_trai
 } // newlines_struct_union
 
 
+// construct {
+static void newlines_constructor(chunk_t *start)
+{
+   LOG_FUNC_ENTRY();
+   log_rule_B("nl_constructor_brace");
+   iarf_e nl_opt = options::nl_constructor_brace();
+
+   // Add or remove newline between 'construct' and '{'.
+
+   log_rule_B("nl_define_macro");
+
+   if (  nl_opt == IARF_IGNORE
+      || (  start->flags.test(PCF_IN_PREPROC)
+         && !options::nl_define_macro()))
+   {
+      return;
+   }
+   chunk_t *braceOpen = chunk_get_next_type(start, CT_BRACE_OPEN, start->level);
+
+   LOG_FMT(LNEWLINE, "%s(%d): braceOpen->orig_line is %zu, orig_col is %zu, text() is '%s'\n",
+           __func__, __LINE__, braceOpen->orig_line, braceOpen->orig_col, braceOpen->text());
+   log_pcf_flags(LNEWLINE, braceOpen->flags);
+
+   if (braceOpen->flags.test(PCF_ONE_LINER))
+   {
+      LOG_FMT(LNEWLINE, "%s(%d): is one_liner\n",
+              __func__, __LINE__);
+      return;
+   }
+   chunk_t *beforeBrace = chunk_get_prev(braceOpen);
+
+   LOG_FMT(LNEWLINE, "%s(%d): beforeBrace->orig_line is %zu, orig_col is %zu, text() is '%s'\n",
+           __func__, __LINE__, beforeBrace->orig_line, beforeBrace->orig_col, beforeBrace->text());
+   // construct {
+   newline_iarf_pair(beforeBrace, braceOpen, nl_opt);
+} // newlines_constructor
+
+
 // enum {
 // enum class angle_state_e : unsigned int {
 // enum-key attr(optional) identifier(optional) enum-base(optional) { enumerator-list(optional) }
@@ -4527,6 +4565,31 @@ void newlines_cleanup_braces(bool first)
                newlines_namespace(pc);
             }
          }
+      }
+      else if (chunk_is_token(pc, CT_CONSTRUCT))
+      {
+        next = chunk_get_next_ncnl(pc);
+
+        if (next != nullptr)
+        {
+          next = chunk_get_next_ncnl(pc);
+
+          if (!chunk_is_token(next, CT_ASSIGN))
+          {
+            chunk_t *braceOpen = chunk_get_next_type(pc, CT_BRACE_OPEN, pc->level);
+
+            if (braceOpen == nullptr)
+            {
+              LOG_FMT(LERR, "%s(%d): Missing BRACE_OPEN after constructor\n   orig_line is %zu, orig_col is %zu\n",
+                      __func__, __LINE__, pc->orig_line, pc->orig_col);
+              exit(EXIT_FAILURE);
+            }
+            LOG_FMT(LNEWLINE, "%s(%d): braceOpen->orig_line is %zu, orig)col is %zu, text() is '%s'\n",
+                    __func__, __LINE__, braceOpen->orig_line, braceOpen->orig_col, braceOpen->text());
+            log_pcf_flags(LNEWLINE, braceOpen->flags);
+            newlines_constructor(pc);
+          }
+        }
       }
       else if (chunk_is_token(pc, CT_SQUARE_OPEN))
       {

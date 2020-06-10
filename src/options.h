@@ -1945,6 +1945,10 @@ nl_case_colon_brace;
 extern Option<iarf_e>
 nl_before_throw;
 
+// Add or remove newline between 'construct' and '{'.
+extern Option<iarf_e>
+nl_constructor_brace;
+
 // Add or remove newline between 'namespace' and '{'.
 extern Option<iarf_e>
 nl_namespace_brace;
