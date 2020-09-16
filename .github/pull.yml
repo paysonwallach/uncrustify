@@ -3,3 +3,5 @@ rules:
   - base: master
     upstream: uncrustify:master
     mergeMethod: rebase
+    conflictReviewers:
+      - paysonwallach
