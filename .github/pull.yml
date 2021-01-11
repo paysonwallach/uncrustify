@@ -1,7 +1,7 @@
 version: "1"
 rules:
-  - base: master
+  - base: upstream
     upstream: uncrustify:master
-    mergeMethod: rebase
+    mergeMethod: hardreset
     conflictReviewers:
       - paysonwallach
