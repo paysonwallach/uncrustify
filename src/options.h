@@ -4,7 +4,7 @@
  *
  * September 2020
  * @author  Ben Gardner
- * @author  Guy Maurel
+ * @author  Guy Maurel, 2025
  * @author  Matthew Woehlke
  * @license GPL v2+
  */
@@ -30,7 +30,11 @@
  * instantiation. Note also that the line break, as shown, is required.
  */
 
+
 #include "option_enum.h"
+
+#include <string>
+
 
 namespace uncrustify
 {
@@ -150,6 +154,13 @@ sp_cpp_lambda_square_brace;
 
 // Add or remove space after the opening parenthesis and before the closing
 // parenthesis of a argument list of a C++11 lambda, as in
+// '[]( <here> ){ ... }'
+// with an empty list.
+extern Option<iarf_e>
+sp_cpp_lambda_argument_list_empty;
+
+// Add or remove space after the opening parenthesis and before the closing
+// parenthesis of a argument list of a C++11 lambda, as in
 // '[]( <here> int x <here> ){ ... }'.
 extern Option<iarf_e>
 sp_cpp_lambda_argument_list;
@@ -181,6 +192,24 @@ sp_before_assign;
 // Overrides sp_assign.
 extern Option<iarf_e>
 sp_after_assign;
+
+// Add or remove space around assignment operator '=', '+=', etc. inside the
+// control parens of a 'for' statement.
+//
+// Overrides sp_assign, sp_before_assign, sp_after_assign and sp_assign_default
+// when set to anything other than ignore.
+extern Option<iarf_e>
+sp_for_assign;
+
+// Add or remove space around operators '++', '--', '+=', etc. in the
+// increment expression of a 'for' statement (the third section, after the
+// second ';').
+//
+// Overrides sp_incdec, sp_assign, sp_for_assign, sp_before_assign,
+// sp_after_assign and sp_assign_default when set to anything other than
+// ignore.
+extern Option<iarf_e>
+sp_for_increment;
 
 // Add or remove space in 'enum {'.
 extern Option<iarf_e>
@@ -232,6 +261,21 @@ sp_bool;
 extern Option<iarf_e>
 sp_compare;
 
+// Add or remove space around compare operator '<', '>', '==', etc. inside the
+// control parens of a 'for' statement.
+//
+// Overrides sp_compare when set to anything other than ignore.
+extern Option<iarf_e>
+sp_for_compare;
+
+// Add or remove space around compare operator '<', '>', '==', etc. inside the
+// control parens of statements other than 'for' (i.e. 'while',
+// 'do { } while', 'if', 'switch', etc.).
+//
+// Overrides sp_compare when set to anything other than ignore.
+extern Option<iarf_e>
+sp_sparen_compare;
+
 // Add or remove space inside '(' and ')'.
 extern Option<iarf_e>
 sp_inside_paren;
@@ -243,10 +287,6 @@ sp_paren_paren;
 // Add or remove space between back-to-back parentheses, i.e. ')(' vs. ') ('.
 extern Option<iarf_e>
 sp_cparen_oparen;
-
-// Whether to balance spaces inside nested parentheses.
-extern Option<bool>
-sp_balance_nested_parens;
 
 // Add or remove space between ')' and '{'.
 extern Option<iarf_e>
@@ -265,9 +305,42 @@ sp_before_ptr_star;
 extern Option<iarf_e>
 sp_before_unnamed_ptr_star;
 
+// Add or remove space before pointer star '*' that is followed by a qualifier.
+// If set to ignore, sp_before_unnamed_ptr_star is used instead.
+extern Option<iarf_e>
+sp_before_qualifier_ptr_star;
+
+// Add or remove space before pointer star '*' that is followed by 'operator' keyword.
+// If set to ignore, sp_before_unnamed_ptr_star is used instead.
+extern Option<iarf_e>
+sp_before_operator_ptr_star;
+
+// Add or remove space before pointer star '*' that is followed by
+// a class scope (as in 'int *MyClass::method()') or namespace scope
+// (as in 'int *my_ns::func()').
+// If set to ignore, sp_before_unnamed_ptr_star is used instead.
+extern Option<iarf_e>
+sp_before_scope_ptr_star;
+
+// Add or remove space before pointer star '*' that is followed by '::',
+// as in 'int *::func()'.
+// If set to ignore, sp_before_unnamed_ptr_star is used instead.
+extern Option<iarf_e>
+sp_before_global_scope_ptr_star;
+
+// Add or remove space between a qualifier and a pointer star '*' that isn't
+// followed by a variable name, as in '(char const *)'. If set to ignore,
+// sp_before_ptr_star is used instead.
+extern Option<iarf_e>
+sp_qualifier_unnamed_ptr_star;
+
 // Add or remove space between pointer stars '*', as in 'int ***a;'.
 extern Option<iarf_e>
 sp_between_ptr_star;
+
+// Add or remove space between pointer star '*' and reference '&', as in 'int *& a;'.
+extern Option<iarf_e>
+sp_between_ptr_ref;
 
 // Add or remove space after pointer star '*', if followed by a word.
 //
@@ -311,14 +384,27 @@ extern Option<iarf_e>
 sp_ptr_star_paren;
 
 // Add or remove space before a pointer star '*', if followed by a function
-// prototype or function definition.
+// prototype or function definition. If set to ignore, sp_before_ptr_star is
+// used instead.
 extern Option<iarf_e>
 sp_before_ptr_star_func;
+
+// Add or remove space between a qualifier and a pointer star '*' followed by
+// the name of the function in a function prototype or definition, as in
+// 'char const *foo()`. If set to ignore, sp_before_ptr_star is used instead.
+extern Option<iarf_e>
+sp_qualifier_ptr_star_func;
 
 // Add or remove space before a pointer star '*' in the trailing return of a
 // function prototype or function definition.
 extern Option<iarf_e>
 sp_before_ptr_star_trailing;
+
+// Add or remove space between a qualifier and a pointer star '*' in the
+// trailing return of a function prototype or function definition, as in
+// 'auto foo() -> char const *'.
+extern Option<iarf_e>
+sp_qualifier_ptr_star_trailing;
 
 // Add or remove space before a reference sign '&'.
 extern Option<iarf_e>
@@ -351,6 +437,14 @@ sp_before_byref_func;
 // parenthesis, as in 'char& (*)()'.
 extern Option<iarf_e>
 sp_byref_paren;
+
+// Add or remove space before a ref-qualifier '&' or '&&' on a member function.
+extern Option<iarf_e>
+sp_before_ref_qualifier;
+
+// Add or remove space after a ref-qualifier '&' or '&&' on a member function.
+extern Option<iarf_e>
+sp_after_ref_qualifier;
 
 // Add or remove space between type and word. In cases where total removal of
 // whitespace would be a syntax error, a value of 'remove' is treated the same
@@ -388,6 +482,7 @@ extern Option<iarf_e>
 sp_inside_angle;
 
 // Add or remove space inside '<>'.
+// if empty.
 extern Option<iarf_e>
 sp_inside_angle_empty;
 
@@ -492,6 +587,10 @@ extern Option<iarf_e>
 sp_after_invariant_paren;
 
 // Add or remove space before empty statement ';' on 'if', 'for' and 'while'.
+// examples:
+//   if (b) <here> ;
+//   for (a=1; a<10; a++) <here> ;
+//   while (*p++ = ' ') <here> ;
 extern Option<iarf_e>
 sp_special_semi;
 
@@ -542,6 +641,11 @@ sp_before_square_asm_block;
 extern Option<iarf_e>
 sp_before_squares;
 
+// Add or remove space before C++17 structured bindings
+// after byref.
+extern Option<iarf_e>
+sp_cpp_before_struct_binding_after_byref;
+
 // Add or remove space before C++17 structured bindings.
 extern Option<iarf_e>
 sp_cpp_before_struct_binding;
@@ -551,6 +655,7 @@ extern Option<iarf_e>
 sp_inside_square;
 
 // Add or remove space inside '[]'.
+// if empty.
 extern Option<iarf_e>
 sp_inside_square_empty;
 
@@ -567,17 +672,17 @@ sp_after_comma;
 extern Option<iarf_e>
 sp_before_comma; // = IARF_REMOVE
 
-// (C#) Add or remove space between ',' and ']' in multidimensional array type
+// (C#, Vala) Add or remove space between ',' and ']' in multidimensional array type
 // like 'int[,,]'.
 extern Option<iarf_e>
 sp_after_mdatype_commas;
 
-// (C#) Add or remove space between '[' and ',' in multidimensional array type
+// (C#, Vala) Add or remove space between '[' and ',' in multidimensional array type
 // like 'int[,,]'.
 extern Option<iarf_e>
 sp_before_mdatype_commas;
 
-// (C#) Add or remove space between ',' in multidimensional array type
+// (C#, Vala) Add or remove space between ',' in multidimensional array type
 // like 'int[,,]'.
 extern Option<iarf_e>
 sp_between_mdatype_commas;
@@ -611,10 +716,6 @@ sp_type_ellipsis;
 extern Option<iarf_e>
 sp_ptr_type_ellipsis;
 
-// (vala) Add or remove space between a type and '?'.
-extern Option<iarf_e>
-sp_type_question;
-
 // Add or remove space between ')' and '...'.
 extern Option<iarf_e>
 sp_paren_ellipsis;
@@ -630,6 +731,13 @@ sp_paren_qualifier;
 // Add or remove space between ')' and 'noexcept'.
 extern Option<iarf_e>
 sp_paren_noexcept;
+
+// Add or remove space between as PAREN '(' and '*' as deref.
+// if ((<here>*it).startsWith("SCREEN ")) {}
+// TQFileInfoListIterator it(<here>*list);
+// if(<here>*memory == NULL) return;
+extern Option<iarf_e>
+sp_paren_deref;
 
 // Add or remove space after class ':'.
 extern Option<iarf_e>
@@ -745,6 +853,7 @@ extern Option<iarf_e>
 sp_inside_braces;
 
 // Add or remove space inside '{}'.
+// if empty.
 extern Option<iarf_e>
 sp_inside_braces_empty;
 
@@ -767,7 +876,7 @@ extern Option<iarf_e>
 sp_func_proto_paren;
 
 // Add or remove space between function name and '()' on function declaration
-// without parameters.
+// if empty.
 extern Option<iarf_e>
 sp_func_proto_paren_empty;
 
@@ -780,7 +889,7 @@ extern Option<iarf_e>
 sp_func_def_paren;
 
 // Add or remove space between function name and '()' on function definition
-// without parameters.
+// if empty.
 extern Option<iarf_e>
 sp_func_def_paren_empty;
 
@@ -792,6 +901,19 @@ sp_inside_fparens;
 // Add or remove space inside function '(' and ')'.
 extern Option<iarf_e>
 sp_inside_fparen;
+
+// Add or remove space inside user functor '(' and ')'.
+extern Option<iarf_e>
+sp_func_call_user_inside_rparen;
+
+// Add or remove space inside empty functor '()'.
+// Overrides sp_after_angle unless use_sp_after_angle_always is set to true.
+extern Option<iarf_e>
+sp_inside_rparens;
+
+// Add or remove space inside functor '(' and ')'.
+extern Option<iarf_e>
+sp_inside_rparen;
 
 // Add or remove space inside the first parentheses in a function type, as in
 // 'void (*x)(...)'.
@@ -856,6 +978,21 @@ sp_func_class_paren;
 // and '()'.
 extern Option<iarf_e>
 sp_func_class_paren_empty;
+
+// Add or remove space between a C++17 deduction guide name and '('.
+// Falls back to sp_func_class_paren if set to ignore.
+extern Option<iarf_e>
+sp_deduction_guide_paren;
+
+// Add or remove space between a C++17 deduction guide name and '()' if empty.
+// Falls back to sp_func_class_paren_empty if set to ignore.
+extern Option<iarf_e>
+sp_deduction_guide_paren_empty;
+
+// Add or remove space around '->' in a C++17 deduction guide.
+// Falls back to sp_trailing_return if set to ignore.
+extern Option<iarf_e>
+sp_deduction_guide_arrow;
 
 // Add or remove space after 'return'.
 extern Option<iarf_e>
@@ -1020,6 +1157,7 @@ extern Option<iarf_e>
 sp_addr; // = IARF_REMOVE
 
 // Add or remove space around the '.' or '->' operators.
+// also the c-sharp null-conditional operator '?.'
 extern Option<iarf_e>
 sp_member; // = IARF_REMOVE
 
@@ -1193,6 +1331,16 @@ sp_extern_paren;
 extern Option<iarf_e>
 sp_cmt_cpp_start;
 
+// remove space after the '//' and the pvs command '-V1234',
+// only works with sp_cmt_cpp_start set to add or force.
+extern Option<bool>
+sp_cmt_cpp_pvs;
+
+// remove space after the '//' and the command 'lint',
+// only works with sp_cmt_cpp_start set to add or force.
+extern Option<bool>
+sp_cmt_cpp_lint;
+
 // Add or remove space in a C++ region marker comment, as in '// <here> BEGIN'.
 // A region marker is defined as a comment which is not preceded by other text
 // (i.e. the comment is the first non-whitespace on the line), and which starts
@@ -1228,7 +1376,7 @@ sp_between_new_paren;
 extern Option<iarf_e>
 sp_after_newop_paren;
 
-// Add or remove space inside parenthesis of the new operator
+// Add or remove space inside parentheses of the new operator
 // as in 'new(foo) BAR'.
 extern Option<iarf_e>
 sp_inside_newop_paren;
@@ -1271,6 +1419,11 @@ sp_after_emb_cmt; // = IARF_FORCE
 extern BoundedOption<unsigned, 0, 16>
 sp_num_after_emb_cmt; // = 1
 
+// Embedded comment spacing options have higher priority (== override)
+// than other spacing options (comma, parenthesis, braces, ...)
+extern Option<bool>
+sp_emb_cmt_priority; // = false
+
 // (Java) Add or remove space between an annotation and the open parenthesis.
 extern Option<iarf_e>
 sp_annotation_paren;
@@ -1287,9 +1440,25 @@ sp_after_noexcept;
 extern Option<iarf_e>
 sp_vala_after_translation;
 
+// Add or remove space before a bit colon ':'.
+extern Option<iarf_e>
+sp_before_bit_colon;
+
+// Add or remove space after a bit colon ':'.
+extern Option<iarf_e>
+sp_after_bit_colon;
+
 // If true, a <TAB> is inserted after #define.
 extern Option<bool>
 force_tab_after_define;
+
+// Add or remove space between two strings.
+extern Option<iarf_e>
+sp_string_string;
+
+// Add or remove space 'struct' and a type.
+extern Option<iarf_e>
+sp_struct_type;
 
 //END
 
@@ -1713,6 +1882,11 @@ indent_bool_paren;
 extern Option<bool>
 indent_ignore_bool;
 
+
+// Whether to indent lines that are nested in boolean expression one more level for each nesting
+extern Option<bool>
+indent_bool_nested_all; // = false
+
 // Whether to ignore the indentation of an arithmetic operator.
 extern Option<bool>
 indent_ignore_arith;
@@ -1827,6 +2001,11 @@ indent_min_vbrace_open;
 extern Option<bool>
 indent_vbrace_open_on_tabstop;
 
+// The number of columns to indent the body of an unbraced
+// if/for/while statement. If zero, use indent_columns.
+extern BoundedOption<unsigned, 0, 16>
+indent_unbraced_body; // = 0
+
 // How to indent after a brace followed by another token (not a newline).
 // true:  indent all contained lines to match the token
 // false: indent all contained lines to match the brace
@@ -1852,7 +2031,7 @@ indent_using_block; // = true
 // How to indent the continuation of ternary operator.
 //
 // 0: Off (default)
-// 1: When the `if_false` is a continuation, indent it under `if_false`
+// 1: When the `if_false` is a continuation, indent it under the `if_true` branch
 // 2: When the `:` is a continuation, indent it under `?`
 extern BoundedOption<unsigned, 0, 2>
 indent_ternary_operator;
@@ -1888,10 +2067,16 @@ donot_indent_func_def_close_paren;
 ///////////////////////////////////////////////////////////////////////////////
 //BEGIN Newline adding and removing options
 
-// Whether to collapse empty blocks between '{' and '}'.
-// If true, overrides nl_inside_empty_func
+// Whether to collapse empty blocks between '{' and '}' except for functions.
+// Use nl_collapse_empty_body_functions to specify how empty function braces
+// should be formatted.
 extern Option<bool>
 nl_collapse_empty_body;
+
+// Whether to collapse empty blocks between '{' and '}' for functions only.
+// If true, overrides nl_inside_empty_func.
+extern Option<bool>
+nl_collapse_empty_body_functions;
 
 // Don't split one-line braced assignments, as in 'foo_t f = { 1, 2 };'.
 extern Option<bool>
@@ -2086,6 +2271,22 @@ nl_getset_brace;
 // Add or remove newline between 'for' and '{'.
 extern Option<iarf_e>
 nl_for_brace;
+
+// Add or remove newline before assignment operator '=', '+=', etc. inside
+// the control parens of a 'for' statement.
+extern Option<iarf_e>
+nl_for_assign;
+
+// Add or remove newline before compare operator '<', '>', '==', etc. inside
+// the control parens of a 'for' statement.
+extern Option<iarf_e>
+nl_for_compare;
+
+// Add or remove newline before operators '++', '--', '+=', etc. in the
+// increment expression of a 'for' statement (the third section, after the
+// second ';').
+extern Option<iarf_e>
+nl_for_increment;
 
 // Add or remove newline before the '{' of a 'catch' statement, as in
 // 'catch (decl) <here> {'.
@@ -2474,6 +2675,19 @@ nl_template_end;
 extern Option<bool>
 nl_oc_msg_args;
 
+// (OC) Minimum number of Objective-C message parameters before applying nl_oc_msg_args.
+extern BoundedOption<unsigned, 0, 16>
+nl_oc_msg_args_min_params;
+
+// (OC) Max code width of Objective-C message before applying nl_oc_msg_args.
+extern BoundedOption<unsigned, 0, 10000>
+nl_oc_msg_args_max_code_width;
+
+// (OC) Whether to apply nl_oc_msg_args if some of the parameters are already
+// on new lines. Overrides nl_oc_msg_args_min_params and nl_oc_msg_args_max_code_width.
+extern Option<bool>
+nl_oc_msg_args_finish_multi_line;
+
 // Add or remove newline between function signature and '{'.
 extern Option<iarf_e>
 nl_fdef_brace;
@@ -2490,6 +2704,10 @@ nl_cpp_ldef_brace;
 // Add or remove newline between 'return' and the return expression.
 extern Option<iarf_e>
 nl_return_expr;
+
+// Add or remove newline between 'throw' and the throw expression.
+extern Option<iarf_e>
+nl_throw_expr;
 
 // Whether to add a newline after semicolons, except in 'for' statements.
 extern Option<bool>
@@ -2554,6 +2772,13 @@ nl_after_vbrace_close;
 // structures. If set to ignore, uses nl_after_brace_close.
 extern Option<iarf_e>
 nl_brace_struct_var;
+
+// Whether to add a newline before/after each '&&' or `||` on the same
+// nesting level in a boolean expression if boolean expression will not
+// fit on a line. code_width needs to be positive and pos_bool needs
+// to be 'lead' or 'trail' for this option to have any effect.
+extern Option<bool>
+nl_bool_expr_hierarchical; // = false
 
 // Whether to alter newlines in '#define' macros.
 extern Option<bool>
@@ -2719,6 +2944,31 @@ nl_split_while_one_liner;
 extern Option<bool>
 donot_add_nl_before_cpp_comment;
 
+// Whether to collapse a braced single-statement 'if' block to one line,
+// as in 'if (cond)\n{\n    stmt;\n}' => 'if (cond) { stmt; }'.
+extern Option<bool>
+nl_collapse_if_one_liner;
+
+// Whether to collapse a braced single-statement 'for' block to one line,
+// as in 'for (...)\n{\n    stmt;\n}' => 'for (...) { stmt; }'.
+extern Option<bool>
+nl_collapse_for_one_liner;
+
+// Whether to collapse a braced single-statement 'while' block to one line,
+// as in 'while (...)\n{\n    stmt;\n}' => 'while (...) { stmt; }'.
+extern Option<bool>
+nl_collapse_while_one_liner;
+
+// Whether to collapse a braced single-statement 'do' block to one line,
+// as in 'do\n{\n    stmt;\n} while (...)' => 'do { stmt; } while (...)'.
+extern Option<bool>
+nl_collapse_do_one_liner;
+
+// Whether to collapse a braced single-statement 'case' block to one line,
+// as in 'case X:\n{\n    stmt;\n}' => 'case X: { stmt; }'.
+extern Option<bool>
+nl_collapse_switch_one_liner;
+
 //END
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2735,7 +2985,7 @@ nl_max_blank_in_func;
 // The number of newlines inside an empty function body.
 // This option overrides eat_blanks_after_open_brace and
 // eat_blanks_before_close_brace, but is ignored when
-// nl_collapse_empty_body=true
+// nl_collapse_empty_body_functions=true
 extern BoundedOption<unsigned, 0, 16>
 nl_inside_empty_func;
 
@@ -2783,8 +3033,23 @@ extern Option<bool>
 nl_class_leave_one_liner_groups;
 
 // The number of newlines after '}' of a multi-line function body.
+//
+// Overrides nl_min_after_func_body and nl_max_after_func_body.
 extern BoundedOption<unsigned, 0, 16>
 nl_after_func_body;
+
+// The minimum number of newlines after '}' of a multi-line function body.
+//
+// Only works when nl_after_func_body is 0.
+extern BoundedOption<unsigned, 0, 16>
+nl_min_after_func_body;
+
+// The maximum number of newlines after '}' of a multi-line function body.
+//
+// Only works when nl_after_func_body is 0.
+// Takes precedence over nl_min_after_func_body.
+extern BoundedOption<unsigned, 0, 16>
+nl_max_after_func_body;
 
 // The number of newlines after '}' of a multi-line function body in a class
 // declaration. Also affects class constructors/destructors.
@@ -2799,13 +3064,6 @@ nl_after_func_body_class;
 // Overrides nl_after_func_body and nl_after_func_body_class.
 extern BoundedOption<unsigned, 0, 16>
 nl_after_func_body_one_liner;
-
-// The number of blank lines after a block of variable definitions at the top
-// of a function body.
-//
-// 0: No change (default).
-extern BoundedOption<unsigned, 0, 16>
-nl_func_var_def_blk;
 
 // The number of newlines before a block of typedefs. If nl_after_access_spec
 // is non-zero, that option takes precedence.
@@ -2826,16 +3084,29 @@ nl_typedef_blk_end;
 extern BoundedOption<unsigned, 0, 16>
 nl_typedef_blk_in;
 
-// The number of empty newlines before a block of variable definitions
+// The minimum number of blank lines after a block of variable definitions
+// at the top of a function body. If any preprocessor directives appear
+// between the opening brace of the function and the variable block, then
+// it is considered as not at the top of the function.Newlines are added
+// before trailing preprocessor directives, if any exist.
+//
+// 0: No change (default).
+extern BoundedOption<unsigned, 0, 16>
+nl_var_def_blk_end_func_top;
+
+// The minimum number of empty newlines before a block of variable definitions
 // not at the top of a function body. If nl_after_access_spec is non-zero,
-// that option takes precedence.
+// that option takes precedence. Newlines are not added at the top of the
+// file or just after an opening brace. Newlines are added above any
+// preprocessor directives before the block.
 //
 // 0: No change (default).
 extern BoundedOption<unsigned, 0, 16>
 nl_var_def_blk_start;
 
-// The number of empty newlines after a block of variable definitions
-// not at the top of a function body.
+// The minimum number of empty newlines after a block of variable definitions
+// not at the top of a function body. Newlines are not added if the block
+// is at the bottom of the file or just before a preprocessor directive.
 //
 // 0: No change (default).
 extern BoundedOption<unsigned, 0, 16>
@@ -2924,7 +3195,7 @@ extern BoundedOption<unsigned, 0, 16>
 nl_after_access_spec;
 
 // The number of newlines between a function definition and the function
-// comment, as in '// comment\n <here> void foo() {...}'.
+// comment, as in '/* comment */ <here> void foo() {...}'.
 //
 // 0: No change (default).
 extern BoundedOption<unsigned, 0, 16>
@@ -3111,6 +3382,24 @@ align_number_right;
 extern Option<bool>
 align_keep_extra_space;
 
+// Maximum budget of empty lines to skip for all alignment spans.
+//  0: No budget (don't skip any empty lines) (default).
+// >0: Default budget of empty lines to skip between candidates.
+extern BoundedOption<unsigned, 0, 5000>
+global_span_num_empty_lines;
+
+// Maximum budget of preprocessor lines to skip for all alignment spans.
+//  0: No budget (don't skip any preprocessor lines) (default).
+// >0: Default budget of preprocessor lines to skip between candidates.
+extern BoundedOption<unsigned, 0, 5000>
+global_span_num_pp_lines;
+
+// Maximum budget of comment lines to skip for all alignment spans.
+//  0: No budget (don't skip any comment lines) (default).
+// >0: Default budget of comment lines to skip between candidates.
+extern BoundedOption<unsigned, 0, 5000>
+global_span_num_cmt_lines;
+
 // Whether to align variable definitions in prototypes and functions.
 extern Option<bool>
 align_func_params;
@@ -3120,6 +3409,27 @@ align_func_params;
 // 0: Don't align (default).
 extern BoundedOption<unsigned, 0, 16>
 align_func_params_span;
+
+// Maximum budget of empty lines to skip for align_func_params_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_func_params_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_func_params_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_func_params_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_func_params_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_func_params_span_num_cmt_lines; // = -1
 
 // The threshold for aligning function parameter definitions.
 // Use a negative number for absolute thresholds.
@@ -3149,6 +3459,27 @@ align_constr_value_thresh;
 extern BoundedOption<unsigned, 0, 16>
 align_constr_value_gap;
 
+// Maximum budget of empty lines to skip for align_constr_value_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_constr_value_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_constr_value_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_constr_value_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_constr_value_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_constr_value_span_num_cmt_lines; // = -1
+
 // Whether to align parameters in single-line functions that have the same
 // name. The function names must already be aligned with each other.
 extern Option<bool>
@@ -3167,6 +3498,27 @@ align_same_func_call_params_span;
 // 0: No limit (default).
 extern BoundedOption<signed, -1000, 5000>
 align_same_func_call_params_thresh;
+
+// Maximum budget of empty lines to skip for align_same_func_call_params_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_same_func_call_params_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_same_func_call_params_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_same_func_call_params_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_same_func_call_params_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_same_func_call_params_span_num_cmt_lines; // = -1
 
 // The span for aligning variable definitions.
 //
@@ -3219,17 +3571,32 @@ align_var_def_attribute;
 extern Option<bool>
 align_var_def_inline;
 
+// Maximum budget of empty lines to skip for align_var_def_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_var_def_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_var_def_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_var_def_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_var_def_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_var_def_span_num_cmt_lines; // = -1
+
 // The span for aligning on '=' in assignments.
 //
 // 0: Don't align (default).
 extern BoundedOption<unsigned, 0, 5000>
 align_assign_span;
-
-// The span for aligning on '{' in braced init list.
-//
-// 0: Don't align (default).
-extern BoundedOption<unsigned, 0, 5000>
-align_braced_init_list_span;
 
 // The span for aligning on '=' in function prototype modifier.
 //
@@ -3244,11 +3611,38 @@ align_assign_func_proto_span;
 extern BoundedOption<signed, -1000, 5000>
 align_assign_thresh;
 
+// Maximum budget of empty lines to skip for align_assign_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_assign_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_assign_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_assign_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_assign_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_assign_span_num_cmt_lines; // = -1
+
 // Whether to align on the left most assignment when multiple
 // definitions are found on the same line.
 // Depends on 'align_assign_span' and 'align_assign_thresh' settings.
 extern Option<bool>
 align_assign_on_multi_var_defs;
+
+// The span for aligning on '{' in braced init list.
+//
+// 0: Don't align (default).
+extern BoundedOption<unsigned, 0, 5000>
+align_braced_init_list_span;
 
 // The threshold for aligning on '{' in braced init list.
 // Use a negative number for absolute thresholds.
@@ -3256,6 +3650,27 @@ align_assign_on_multi_var_defs;
 // 0: No limit (default).
 extern BoundedOption<signed, -1000, 5000>
 align_braced_init_list_thresh;
+
+// Maximum budget of empty lines to skip for align_braced_init_list_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_braced_init_list_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_braced_init_list_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_braced_init_list_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_braced_init_list_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_braced_init_list_span_num_cmt_lines; // = -1
 
 // How to apply align_assign_span to function declaration "assignments", i.e.
 // 'virtual void foo() = 0' or '~foo() = {default|delete}'.
@@ -3279,11 +3694,53 @@ align_enum_equ_span;
 extern BoundedOption<signed, -1000, 5000>
 align_enum_equ_thresh;
 
+// Maximum budget of empty lines to skip for align_enum_equ_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_enum_equ_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_enum_equ_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_enum_equ_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_enum_equ_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_enum_equ_span_num_cmt_lines; // = -1
+
 // The span for aligning class member definitions.
 //
 // 0: Don't align (default).
 extern BoundedOption<unsigned, 0, 5000>
 align_var_class_span;
+
+// Maximum budget of empty lines to skip for align_var_class_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_var_class_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_var_class_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_var_class_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_var_class_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_var_class_span_num_cmt_lines; // = -1
 
 // The threshold for aligning class member definitions.
 // Use a negative number for absolute thresholds.
@@ -3301,6 +3758,27 @@ align_var_class_gap;
 // 0: Don't align (default).
 extern BoundedOption<unsigned, 0, 5000>
 align_var_struct_span;
+
+// Maximum budget of empty lines to skip for align_var_struct_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_var_struct_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_var_struct_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_var_struct_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_var_struct_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_var_struct_span_num_cmt_lines; // = -1
 
 // The threshold for aligning struct/union member definitions.
 // Use a negative number for absolute thresholds.
@@ -3324,6 +3802,27 @@ align_struct_init_span;
 // 0: Don't align (default).
 extern BoundedOption<unsigned, 0, 16>
 align_typedef_span;
+
+// Maximum budget of empty lines to skip for align_typedef_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_typedef_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_typedef_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_typedef_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_typedef_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_typedef_span_num_cmt_lines; // = -1
 
 // The minimum space between the type and the synonym of a typedef.
 extern BoundedOption<unsigned, 0, 16>
@@ -3361,6 +3860,27 @@ align_typedef_amp_style;
 extern BoundedOption<unsigned, 0, 5000>
 align_right_cmt_span;
 
+// Maximum budget of empty lines to skip for align_right_cmt_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_right_cmt_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_right_cmt_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_right_cmt_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_right_cmt_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_right_cmt_span_num_cmt_lines; // = -1
+
 // Minimum number of columns between preceding text and a trailing comment in
 // order for the comment to qualify for being aligned. Must be non-zero to have
 // an effect.
@@ -3384,11 +3904,53 @@ align_right_cmt_same_level;
 extern BoundedOption<unsigned, 0, 200>
 align_right_cmt_at_col;
 
+// How to align a Doxygen 'after member' comment ('//!<', '///<', '/*!<' or
+// '/**<') alone on its line, continuing the trailing comment above it.
+//
+// 0: Usual comment indentation rules (default).
+// 1: Align with the comment it continues.
+// 2: Indent at the brace level.
+//
+// With 1 and 2, continuation lines count neither in align_right_cmt_span nor
+// in its budgets.
+// See documentation/align-right-cmt-doxygen-cont.txt.
+extern BoundedOption<unsigned, 0, 2>
+align_right_cmt_doxygen_cont;
+
 // The span for aligning function prototypes.
 //
 // 0: Don't align (default).
 extern BoundedOption<unsigned, 0, 5000>
 align_func_proto_span;
+
+// Whether to ignore continuation lines when evaluating the number of
+// new lines for the function prototype alignment's span.
+//
+// false: continuation lines are part of the newlines count
+// true:  continuation lines are not counted
+extern Option<bool>
+align_func_proto_span_ignore_cont_lines; // = false
+
+// Maximum budget of empty lines to skip for align_func_proto_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_func_proto_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_func_proto_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_func_proto_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_func_proto_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_func_proto_span_num_cmt_lines; // = -1
 
 // How to consider (or treat) the '*' in the alignment of function prototypes.
 //
@@ -3449,10 +4011,22 @@ align_single_line_brace_gap;
 extern BoundedOption<unsigned, 0, 5000>
 align_oc_msg_spec_span;
 
-// Whether to align macros wrapped with a backslash and a newline. This will
-// not work right if the macro contains a multi-line comment.
-extern Option<bool>
+// Whether and how to align backslashes that split a macro onto multiple lines.
+// This will not work right if the macro contains a multi-line comment.
+//
+// 0: Do nothing (default)
+// 1: Align the backslashes in the column at the end of the longest line
+// 2: Align with the backslash that is farthest to the left, or, if that
+//    backslash is farther left than the end of the longest line, at the end of
+//    the longest line
+// 3: Align with the backslash that is farthest to the right
+extern BoundedOption<unsigned, 0, 3>
 align_nl_cont;
+
+// The minimum number of spaces between the end of a line and its continuation
+// backslash. Requires align_nl_cont.
+extern BoundedOption<unsigned, 0, 16>
+align_nl_cont_spaces; // = 1
 
 // Whether to align macro functions and variables together.
 extern Option<bool>
@@ -3464,6 +4038,28 @@ align_pp_define_together;
 // >0: Number of lines (including comments) between blocks
 extern BoundedOption<unsigned, 0, 5000>
 align_pp_define_span;
+
+// Maximum budget of empty lines to skip for align_pp_define_span.
+//  -1: Use the global_span_num_empty_lines budget (default).
+//   0: No budget (don't skip any empty lines).
+//  >0: Skip up to this many empty lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_pp_define_span_num_empty_lines; // = -1
+
+// Maximum budget of preprocessor lines to skip for align_pp_define_span.
+//  -1: Use the global_span_num_pp_lines budget (default).
+//   0: No budget (don't skip any preprocessor lines).
+//  >0: Skip up to this many preprocessor lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_pp_define_span_num_pp_lines; // = -1
+
+// Maximum budget of comment lines to skip for align_pp_define_span.
+//  -1: Use the global_span_num_cmt_lines budget (default).
+//   0: No budget (don't skip any comment lines).
+//  >0: Skip up to this many comment lines between candidates.
+extern BoundedOption<signed, -1, 5000>
+align_pp_define_span_num_cmt_lines; // = -1
+
 
 // The minimum space between label and value of a preprocessor define.
 extern BoundedOption<unsigned, 0, 16>
@@ -3783,9 +4379,13 @@ mod_full_brace_nl;
 extern Option<bool>
 mod_full_brace_nl_block_rem_mlcond;
 
-// Add or remove unnecessary parenthesis on 'return' statement.
+// Add or remove unnecessary parentheses on 'return' statement.
 extern Option<iarf_e>
 mod_paren_on_return;
+
+// Add or remove unnecessary parentheses on 'throw' statement.
+extern Option<iarf_e>
+mod_paren_on_throw;
 
 // (Pawn) Whether to change optional semicolons to real semicolons.
 extern Option<bool>
@@ -3813,6 +4413,13 @@ mod_remove_extra_semicolon;
 // Whether to remove duplicate include.
 extern Option<bool>
 mod_remove_duplicate_include;
+
+// the following options (mod_XX_closebrace_comment) use different comment,
+// depending of the setting of the next option.
+// false: Use the c comment (default)
+// true : Use the cpp comment
+extern Option<bool>
+mod_add_force_c_closebrace_comment;
 
 // If a function body exceeds the specified number of newlines and doesn't have
 // a comment after the close brace, a comment will be added.
@@ -3910,6 +4517,59 @@ mod_remove_empty_return;
 extern Option<iarf_e>
 mod_enum_last_comma;
 
+// Syntax to use for infinite loops.
+//
+// 0: Leave syntax alone (default)
+// 1: Rewrite as `for(;;)`
+// 2: Rewrite as `while(true)`
+// 3: Rewrite as `do`...`while(true);`
+// 4: Rewrite as `while(1)`
+// 5: Rewrite as `do`...`while(1);`
+//
+// Infinite loops that do not already match one of these syntaxes are ignored.
+// Other options that affect loop formatting will be applied after transforming
+// the syntax.
+extern BoundedOption<unsigned, 0, 5>
+mod_infinite_loop;
+
+// Add or remove the 'int' keyword in 'int short'.
+extern Option<iarf_e>
+mod_int_short;
+
+// Add or remove the 'int' keyword in 'short int'.
+extern Option<iarf_e>
+mod_short_int;
+
+// Add or remove the 'int' keyword in 'int long'.
+extern Option<iarf_e>
+mod_int_long;
+
+// Add or remove the 'int' keyword in 'long int'.
+extern Option<iarf_e>
+mod_long_int;
+
+// Add or remove the 'int' keyword in 'int signed'.
+extern Option<iarf_e>
+mod_int_signed;
+
+// Add or remove the 'int' keyword in 'signed int'.
+extern Option<iarf_e>
+mod_signed_int;
+
+// Add or remove the 'int' keyword in 'int unsigned'.
+extern Option<iarf_e>
+mod_int_unsigned;
+
+// Add or remove the 'int' keyword in 'unsigned int'.
+extern Option<iarf_e>
+mod_unsigned_int;
+
+// If there is a situation where mod_int_* and mod_*_int would result in
+// multiple int keywords, whether to keep the rightmost int (the default) or the
+// leftmost int.
+extern Option<bool>
+mod_int_prefer_int_on_left;
+
 // (OC) Whether to organize the properties. If true, properties will be
 // rearranged according to the mod_sort_oc_property_*_weight factors.
 extern Option<bool>
@@ -3950,6 +4610,15 @@ mod_sort_oc_property_nullability_weight;
 ///////////////////////////////////////////////////////////////////////////////
 //BEGIN Preprocessor options
 
+// How to use tabs when indenting preprocessor code.
+//
+// -1: Use 'indent_with_tabs' setting (default)
+//  0: Spaces only
+//  1: Indent with tabs to brace level, align with spaces
+//  2: Indent and align with tabs, using spaces when not on a tabstop
+extern BoundedOption<signed, -1, 2>
+pp_indent_with_tabs; // = -1
+
 // Add or remove indentation of preprocessor directives inside #if blocks
 // at brace level 0 (file-level).
 extern Option<iarf_e>
@@ -3972,11 +4641,11 @@ pp_indent_at_level0;
 extern BoundedOption<unsigned, 0, 16>
 pp_indent_count; // = 1
 
-// Add or remove space after # based on pp_level of #if blocks.
+// Add or remove space after # based on pp level of #if blocks.
 extern Option<iarf_e>
-pp_space;
+pp_space_after;
 
-// Sets the number of spaces per level added with pp_space.
+// Sets the number of spaces per level added with pp_space_after.
 extern BoundedOption<unsigned, 0, 16>
 pp_space_count;
 
@@ -4018,38 +4687,53 @@ pp_include_at_level;
 extern Option<bool>
 pp_ignore_define_body;
 
+// An offset value that controls the indentation of the body of a multiline #define.
+// 'body' refers to all the lines of a multiline #define except the first line.
+// Requires 'pp_ignore_define_body = false'.
+//
+//  <0: Absolute column: the body indentation starts off at the specified column
+//      (ex. -3 ==> the body is indented starting from column 3)
+// >=0: Relative to the column of the '#' of '#define'
+//      (ex.  3 ==> the body is indented starting 3 columns at the right of '#')
+extern BoundedOption<signed, -32, 32>
+pp_multiline_define_body_indent; // = 8
+
 // TODO The following descriptions are confusing and suffer from sub-optimal
 // grammar, and should be revised; from here...
 
 // Whether to indent case statements between #if, #else, and #endif.
-// Only applies to the indent of the preprocesser that the case statements
+// Only applies to the indent of the preprocessor that the case statements
 // directly inside of.
 extern Option<bool>
 pp_indent_case; // = true
 
 // Whether to indent whole function definitions between #if, #else, and #endif.
-// Only applies to the indent of the preprocesser that the function definition
+// Only applies to the indent of the preprocessor that the function definition
 // is directly inside of.
 extern Option<bool>
 pp_indent_func_def; // = true
 
 // Whether to indent extern C blocks between #if, #else, and #endif.
-// Only applies to the indent of the preprocesser that the extern block is
+// Only applies to the indent of the preprocessor that the extern block is
 // directly inside of.
 extern Option<bool>
 pp_indent_extern; // = true
 
 // How to indent braces directly inside #if, #else, and #endif.
 // Requires pp_if_indent_code=true and only applies to the indent of the
-// preprocesser that the braces are directly inside of.
+// preprocessor that the braces are directly inside of.
 //  0: No extra indent
 //  1: Indent by one level
 // -1: Preserve original indentation
 extern BoundedOption<signed, -1, 1>
 pp_indent_brace; // = 1
 
-// Whether to print warning messages for unbalanced #if and #else blocks.
-// This will print a message in the following cases:
+// Action to perform when unbalanced #if and #else blocks are found.
+// 0: do nothing
+// 1: print a warning message
+// 2: terminate the program with an error (EX_SOFTWARE)
+//
+// The action will be triggered in the following cases:
 // - if an #ifdef block ends on a different indent level than
 //   where it started from. Example:
 //
@@ -4068,10 +4752,8 @@ pp_indent_brace; // = 1
 //        }
 //      int j;
 //    #endif
-extern Option<bool>
-pp_warn_unbalanced_if; // = false
-
-// TODO ...until here.
+extern BoundedOption<unsigned, 0, 2>
+pp_unbalanced_if_action; // = 0
 
 //END
 
@@ -4121,10 +4803,10 @@ use_indent_continue_only_once;
 
 // The indentation can be:
 // - after the assignment, at the '[' character
-// - at the begin of the lambda body
+// - at the beginning of the lambda body
 //
-// true:  indentation will be after the assignment
-// false: indentation will be at the begin of the lambda body (default)
+// true:  indentation will be at the beginning of the lambda body
+// false: indentation will be after the assignment (default)
 extern Option<bool>
 indent_cpp_lambda_only_once;
 
@@ -4183,6 +4865,27 @@ debug_timeout;
 // 0: do not truncate.
 extern BoundedOption<unsigned, 0, 960>
 debug_truncate;
+
+// sort (or not) the tracking info.
+extern Option<bool>
+debug_sort_the_tracks;  // = true
+
+// decode (or not) the flags as a new line.
+// only if the -p option is set.
+extern Option<bool>
+debug_decode_the_flags;
+
+// use (or not) the exit(EX_SOFTWARE) function.
+extern Option<bool>
+debug_use_the_exit_function_pop; // = true
+
+// print (or not) the version in the file defined at the command option -o.
+extern Option<bool>
+debug_print_version;
+
+// insert the number of the line at the beginning of each line
+extern Option<bool>
+set_numbering_for_html_output;
 
 //END
 

@@ -15,6 +15,9 @@
 #include "compat.h"
 
 #include <cstdarg>                   // to get va_start, va_end
+#include <cstdio>                    // to get fprintf
+#include <deque>                     // to get deque<>
+#include <vector>                    // to get vector<>
 
 
 struct log_fcn_info
@@ -71,7 +74,7 @@ static size_t log_start(log_sev_t sev);
  * Cleans up after a log statement by detecting whether the log is done,
  * (it ends in a newline) and possibly flushing the log.
  */
-static void log_end(void);
+static void log_end();
 
 
 /**
@@ -167,7 +170,7 @@ static size_t log_start(log_sev_t sev)
 }
 
 
-static void log_end(void)
+static void log_end()
 {
    g_log.in_log = (g_log.bufX[g_log.buf_len - 1] != '\n');
 
@@ -187,7 +190,7 @@ void log_fmt(log_sev_t sev, const char *fmt, ...)
       return;
    }
    // Issue #1203
-   unsigned int length = strlen(fmt);
+   size_t length = strlen(fmt);
 
    if (length == 0)
    {
@@ -201,10 +204,10 @@ void log_fmt(log_sev_t sev, const char *fmt, ...)
 
    if (length >= buffer_length)
    {
-      fprintf(stderr, "FATAL(1): The variable 'buf' is not big enought:\n");
-      fprintf(stderr, "   it should be bigger as %u\n", length);
-      fprintf(stderr, "Please make a report.\n");
-      fprintf(stderr, "For the buffer: %s\n", fmt);
+      fprintf(stderr, "FATAL(1): The variable 'buf' is too small,\n");
+      fprintf(stderr, "   it should be bigger than %zu.\n", length);
+      fprintf(stderr, "Please report this to the uncrustify project.\n");
+      fflush(stderr);
       exit(EX_SOFTWARE);
    }
    memcpy(buf, fmt, length);
@@ -243,10 +246,10 @@ void log_fmt(log_sev_t sev, const char *fmt, ...)
 
             if (X >= buffer_length)
             {
-               fprintf(stderr, "FATAL(2): The variable 'buf' is not big enought:\n");
-               fprintf(stderr, "   it should be bigger as %zu\n", X);
-               fprintf(stderr, "Please make a report.\n");
-               fprintf(stderr, "For the buffer: %s\n", fmt);
+               fprintf(stderr, "FATAL(2): The variable 'buf' is too small,\n");
+               fprintf(stderr, "   it should be bigger than %zu.\n", X);
+               fprintf(stderr, "Please report this to the uncrustify project.\n");
+               fflush(stderr);
                exit(EX_SOFTWARE);
             }
             g_log.bufX.resize(X);
@@ -279,17 +282,17 @@ void log_func_stack(log_sev_t sev, const char *prefix, const char *suffix, size_
 {
    UNUSED(skip_cnt);
 
-   if (prefix)
+   if (prefix != nullptr)
    {
       LOG_FMT(sev, "%s", prefix);
    }
 #ifdef DEBUG
-   const char *sep      = "";
-   size_t     g_fq_size = g_fq.size();
-   size_t     begin_with;
+   size_t g_fq_size = g_fq.size();
 
    if (g_fq_size > (skip_cnt + 1))
    {
+      size_t     begin_with;
+      char const *sep = "";
       begin_with = g_fq_size - (skip_cnt + 1);
 
       for (size_t idx = begin_with; idx != 0; idx--)
@@ -304,7 +307,7 @@ void log_func_stack(log_sev_t sev, const char *prefix, const char *suffix, size_
    LOG_FMT(sev, "-DEBUG NOT SET-");
 #endif
 
-   if (suffix)
+   if (suffix != nullptr)
    {
       LOG_FMT(sev, "%s", suffix);
    }

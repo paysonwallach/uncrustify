@@ -20,7 +20,6 @@
  *   --files ( no batch processing will be available )
  *   --prefix
  *   --suffix
- *   --assume
  *   --no-backup
  *   --replace
  *   --mtime
@@ -48,7 +47,6 @@
 
 #if defined (__linux__)
 
-
 #include "keywords.h"
 #include "log_levels.h"
 #include "logger.h"
@@ -65,6 +63,7 @@
 #include <memory>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -486,39 +485,32 @@ intptr_t _uncrustify(intptr_t _file, lang_flag_e langIDX, bool frag, bool defer)
 {
    // Problem: uncrustify originally is not a lib and uses global vars such as
    // cpd.error_count for the whole program execution
-   // to know if errors occurred during the formating step we reset this var here
-   cpd.error_count = 0;
-   cpd.filename    = "stdin";
-   cpd.frag        = frag;
+   // to know if errors occurred during the formatting step we reset this var here
+   cpd.filename = "stdin";
+   cpd.frag     = frag;
 
-   if (langIDX == 0)   // 0 == undefined
+   if (langIDX == (lang_flag_e)0)   // 0 == undefined
    {
       LOG_FMT(LWARN, "language of input file not defined, C++ will be assumed\n");
-      cpd.lang_flags = LANG_CPP;
+      cpd.lang_flags = e_LANG_CPP;
    }
    else
    {
-      cpd.lang_flags = langIDX;
+      cpd.lang_flags = static_cast<size_t>(langIDX);
    }
    // embind complains about char* so we use an intptr_t to get the pointer and
    // cast it, memory management is done in /emscripten/postfix_module.js
-   char     *file = reinterpret_cast<char *>(_file);
+   char       *file = reinterpret_cast<char *>(_file);
 
-   file_mem fm;
-
-   fm.raw.clear();
-   fm.data.clear();
-   fm.enc = char_encoding_e::e_ASCII;
-   fm.raw = vector<UINT8>();
-
-   char c;
+   MemoryFile fm;
+   char       c;
 
    for (auto idx = 0; (c = file[idx]) != 0; ++idx)
    {
       fm.raw.push_back(c);
    }
 
-   if (!decode_unicode(fm.raw, fm.data, fm.enc, fm.bom))
+   if (!decode_unicode(fm))
    {
       LOG_FMT(LERR, "Failed to read code\n");
       return(0);
@@ -545,7 +537,7 @@ intptr_t _uncrustify(intptr_t _file, lang_flag_e langIDX, bool frag, bool defer)
       return(0);
    }
    // TODO One way to implement the --parsed, -p functionality would
-   // be to let the uncrustify_file function run, throw away the formated
+   // be to let the uncrustify_file function run, throw away the formatted
    // output and return the debug as a string. For this uncrustify_file would
    // need to accept a stream, FILE or a char array pointer in which the output
    // will be stored.
@@ -562,11 +554,6 @@ intptr_t _uncrustify(intptr_t _file, lang_flag_e langIDX, bool frag, bool defer)
 
    fflush(stream);
    fclose(stream);
-
-   if (cpd.error_count != 0)
-   {
-      LOG_FMT(LWARN, "%d errors occurred during formating\n", cpd.error_count);
-   }
 
    if (len == 0)
    {
@@ -620,7 +607,7 @@ intptr_t _debug(intptr_t _file, lang_flag_e langIDX, bool frag)
    auto formatted_str_ptr = _uncrustify(_file, langIDX, frag, true);
    char *formatted_str    = reinterpret_cast<char *>(formatted_str_ptr);
 
-   // Lazy solution: Throw away the formated file output.
+   // Lazy solution: Throw away the formatted file output.
    // Maybe later add option to return both formatted file string and debug
    // file string together ... somehow.
    free(formatted_str);
@@ -801,7 +788,7 @@ EMSCRIPTEN_BINDINGS(MainModule)
 
    enum_<E_Token>("TokenType")
       .value("NONE", E_Token::CT_NONE)
-      .value("EOF", E_Token::CT_EOF)
+      .value("EOFILE", E_Token::CT_EOF)
       .value("UNKNOWN", E_Token::CT_UNKNOWN)
       .value("JUNK", E_Token::CT_JUNK)
       .value("WHITESPACE", E_Token::CT_WHITESPACE)
@@ -815,6 +802,7 @@ EMSCRIPTEN_BINDINGS(MainModule)
       .value("COMMENT_START", E_Token::CT_COMMENT_START)
       .value("COMMENT_END", E_Token::CT_COMMENT_END)
       .value("COMMENT_WHOLE", E_Token::CT_COMMENT_WHOLE)
+      .value("COMMENT_CPP_ENDIF", E_Token::CT_COMMENT_CPP_ENDIF)
       .value("COMMENT_ENDIF", E_Token::CT_COMMENT_ENDIF)
       .value("IGNORED", E_Token::CT_IGNORED)
       .value("WORD", E_Token::CT_WORD)
@@ -840,6 +828,9 @@ EMSCRIPTEN_BINDINGS(MainModule)
       .value("SIZEOF", E_Token::CT_SIZEOF)
       .value("DECLTYPE", E_Token::CT_DECLTYPE)
       .value("RETURN", E_Token::CT_RETURN)
+      .value("CO_AWAIT", E_Token::CT_CO_AWAIT)
+      .value("CO_YIELD", E_Token::CT_CO_YIELD)
+      .value("CO_RETURN", E_Token::CT_CO_RETURN)
       .value("BREAK", E_Token::CT_BREAK)
       .value("UNION", E_Token::CT_UNION)
       .value("GOTO", E_Token::CT_GOTO)
@@ -994,6 +985,7 @@ EMSCRIPTEN_BINDINGS(MainModule)
       .value("CPP_LAMBDA", E_Token::CT_CPP_LAMBDA)
       .value("CPP_LAMBDA_RET", E_Token::CT_CPP_LAMBDA_RET)
       .value("TRAILING_RET", E_Token::CT_TRAILING_RET)
+      .value("DEDUCTION_GUIDE", E_Token::CT_DEDUCTION_GUIDE)
       .value("BIT_COLON", E_Token::CT_BIT_COLON)
       .value("OC_DYNAMIC", E_Token::CT_OC_DYNAMIC)
       .value("OC_END", E_Token::CT_OC_END)

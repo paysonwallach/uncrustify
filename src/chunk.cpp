@@ -6,16 +6,16 @@
  * @license GPL v2+
  */
 
+#include <algorithm>
+#include <cstdio>
+
 #include "chunk.h"
 
 #include "ListManager.h"
 #include "prototypes.h"
 #include "space.h"
 
-typedef ListManager<Chunk> ChunkList_t;
-
-
-ChunkList_t g_cl; //! global chunk list
+static ChunkListManager gChunkList;  // global chunk list
 
 
 /*
@@ -27,127 +27,101 @@ Chunk        Chunk::NullChunk(true);
 Chunk *const Chunk::NullChunkPtr(&Chunk::NullChunk);
 
 
-Chunk::Chunk(bool null_c)
-   : null_chunk(null_c)
+void Chunk::CopyFrom(const Chunk &o)
 {
-   Reset();
-}
+   m_type         = o.m_type;
+   m_parentType   = o.m_parentType;
+   m_origLine     = o.m_origLine;
+   m_origCol      = o.m_origCol;
+   m_origColEnd   = o.m_origColEnd;
+   m_origPrevSp   = o.m_origPrevSp;
+   m_column       = o.m_column;
+   m_columnIndent = o.m_columnIndent;
+   m_nlCount      = o.m_nlCount;
+   m_nlColumn     = o.m_nlColumn;
+   m_level        = o.m_level;
+   m_braceLevel   = o.m_braceLevel;
+   m_ppLevel      = o.m_ppLevel;
+   m_afterTab     = o.m_afterTab;
 
+   m_flags           = o.m_flags;
+   m_alignmentData   = o.m_alignmentData;
+   m_indentationData = o.m_indentationData;
 
-Chunk::Chunk(const Chunk &o)
-   : null_chunk(o.null_chunk)
-{
-   copyFrom(o);
-}
+   m_next   = Chunk::NullChunkPtr;
+   m_prev   = Chunk::NullChunkPtr;
+   m_parent = Chunk::NullChunkPtr;
 
-
-Chunk &Chunk::operator=(const Chunk &o)
-{
-   if (this != &o)
-   {
-      copyFrom(o);
-   }
-   return(*this);
-}
-
-
-void Chunk::copyFrom(const Chunk &o)
-{
-   next        = nullptr;
-   prev        = nullptr;
-   parent      = nullptr;
-   align       = o.align;
-   indent      = o.indent;
-   type        = o.type;
-   parent_type = o.parent_type;
-
-   orig_line     = o.orig_line;
-   orig_col      = o.orig_col;
-   orig_col_end  = o.orig_col_end;
-   orig_prev_sp  = o.orig_prev_sp;
-   flags         = o.flags;
-   column        = o.column;
-   column_indent = o.column_indent;
-
-   nl_count  = o.nl_count;
-   nl_column = o.nl_column;
-   level     = o.level;
-
-   brace_level = o.brace_level;
-   pp_level    = o.pp_level;
-   after_tab   = o.after_tab;
-   str         = o.str;
-
-   tracking = o.tracking;
-}
+   m_text            = o.m_text;
+   m_trackingList_SP = o.m_trackingList_SP;
+} // Chunk::CopyFrom
 
 
 void Chunk::Reset()
 {
-   memset(&align, 0, sizeof(align));
-   memset(&indent, 0, sizeof(indent));
-   next          = nullptr;
-   prev          = nullptr;
-   parent        = nullptr;
-   type          = CT_NONE;
-   parent_type   = CT_NONE;
-   orig_line     = 0;
-   orig_col      = 0;
-   orig_col_end  = 0;
-   orig_prev_sp  = 0;
-   flags         = PCF_NONE;
-   column        = 0;
-   column_indent = 0;
-   nl_count      = 0;
-   nl_column     = 0;
-   level         = 0;
-   brace_level   = 0;
-   pp_level      = 999;                                // use a big value to find some errors
-   after_tab     = false;
+   m_type         = E_Token::CT_NONE;
+   m_parentType   = E_Token::CT_NONE;
+   m_origLine     = 0;
+   m_origCol      = 0;
+   m_origColEnd   = 0;
+   m_origPrevSp   = 0;
+   m_column       = 0;
+   m_columnIndent = 0;
+   m_nlCount      = 0;
+   m_nlColumn     = 0;
+   m_level        = 0;
+   m_braceLevel   = 0;
+   m_ppLevel      = 999;            // use a big value to find some errors
+   m_afterTab     = false;
+
+   m_flags = PCF_NONE;
+   memset(&m_alignmentData, 0, sizeof(m_alignmentData));
+   m_alignmentData.next  = NullChunkPtr;
+   m_alignmentData.start = NullChunkPtr;
+   m_alignmentData.ref   = NullChunkPtr;
+   memset(&m_indentationData, 0, sizeof(m_indentationData));
+
+   m_next   = Chunk::NullChunkPtr;
+   m_prev   = Chunk::NullChunkPtr;
+   m_parent = Chunk::NullChunkPtr;
+
    // for debugging purpose only
-   tracking = nullptr;
-   str.clear();
-}
-
-
-size_t Chunk::Len() const
-{
-   return(str.size());
-}
-
-
-const char *Chunk::Text() const
-{
-   return(str.c_str());
-}
+   m_text.clear();
+   m_trackingList_SP = nullptr;
+} // Chunk::Reset
 
 
 const char *Chunk::ElidedText(char *for_the_copy) const
 {
-   const char *test_it       = Text();
-   size_t     test_it_length = strlen(test_it);
+   const char *test_it = GetLogText();
 
    size_t     truncate_value = uncrustify::options::debug_truncate();
 
    if (truncate_value != 0)
    {
+      size_t test_it_length = strlen(test_it);
+
       if (test_it_length > truncate_value)
       {
-         memset(for_the_copy, 0, 1000);
+         const char trunc_msg[31] = " ... <The string is truncated>";
 
-         if (test_it_length < truncate_value + 30)
+         memset(for_the_copy, 0, 1000);
+         size_t snprintf_len;  //!< Number of chars to copy from test_it + '\0'
+
+         if (test_it_length < truncate_value + (sizeof(trunc_msg) - 1))
          {
-            strncpy(for_the_copy, test_it, truncate_value - 30);
-            for_the_copy[truncate_value - 30] = 0;
+            snprintf_len = truncate_value - (sizeof(trunc_msg) - 2);
          }
          else
          {
-            strncpy(for_the_copy, test_it, truncate_value);
-            for_the_copy[truncate_value] = 0;
+            snprintf_len = truncate_value + 1;
          }
-         char *message = strcat(for_the_copy, " ... <The string is truncated>");
+         snprintf(for_the_copy, snprintf_len, "%s", test_it);
+         for_the_copy[snprintf_len - 1] = '\0';   // MSVC19 does not include EOS
 
-         return(message);
+         snprintf(for_the_copy + strlen(for_the_copy), 1000 - strlen(for_the_copy), trunc_msg);
+
+         return(for_the_copy);
       }
       else
       {
@@ -155,32 +129,21 @@ const char *Chunk::ElidedText(char *for_the_copy) const
       }
    }
    return(test_it);
-}
+} // Chunk::ElidedText
 
 
 Chunk *Chunk::GetNext(const E_Scope scope) const
 {
-   if (IsNullChunk())
-   {
-      return(NullChunkPtr);
-   }
-   Chunk *pc = g_cl.GetNext(this);
-
-   if (  pc == nullptr
-      || pc->IsNullChunk())
-   {
-      return(NullChunkPtr);
-   }
-
    if (scope == E_Scope::ALL)
    {
-      return(pc);
+      return(m_next);
    }
+   Chunk *pc = m_next;
 
-   if (flags.test(PCF_IN_PREPROC))
+   if (TestFlags(PCF_IN_PREPROC))
    {
       // If in a preproc, return a null chunk if trying to leave
-      if (!pc->flags.test(PCF_IN_PREPROC))
+      if (!pc->TestFlags(PCF_IN_PREPROC))
       {
          return(NullChunkPtr);
       }
@@ -188,17 +151,10 @@ Chunk *Chunk::GetNext(const E_Scope scope) const
    }
 
    // Not in a preproc, skip any preproc
-   while (  pc != nullptr
-         && pc->IsNotNullChunk()
-         && pc->flags.test(PCF_IN_PREPROC))
+   while (  pc->IsNotNullChunk()
+         && pc->TestFlags(PCF_IN_PREPROC))
    {
-      pc = g_cl.GetNext(pc);
-   }
-
-   if (  pc == nullptr
-      || pc->IsNullChunk())
-   {
-      return(NullChunkPtr);
+      pc = pc->m_next;
    }
    return(pc);
 } // Chunk::GetNext
@@ -206,27 +162,16 @@ Chunk *Chunk::GetNext(const E_Scope scope) const
 
 Chunk *Chunk::GetPrev(const E_Scope scope) const
 {
-   if (IsNullChunk())
-   {
-      return(NullChunkPtr);
-   }
-   Chunk *pc = g_cl.GetPrev(this);
-
-   if (  pc == nullptr
-      || pc->IsNullChunk())
-   {
-      return(NullChunkPtr);
-   }
-
    if (scope == E_Scope::ALL)
    {
-      return(pc);
+      return(m_prev);
    }
+   Chunk *pc = m_prev;
 
-   if (flags.test(PCF_IN_PREPROC))
+   if (TestFlags(PCF_IN_PREPROC))
    {
       // If in a preproc, return a null chunk if trying to leave
-      if (!pc->flags.test(PCF_IN_PREPROC))
+      if (!pc->TestFlags(PCF_IN_PREPROC))
       {
          return(NullChunkPtr);
       }
@@ -234,91 +179,34 @@ Chunk *Chunk::GetPrev(const E_Scope scope) const
    }
 
    // Not in a preproc, skip any preproc
-   while (  pc != nullptr
-         && pc->IsNotNullChunk()
-         && pc->flags.test(PCF_IN_PREPROC))
+   while (  pc->IsNotNullChunk()
+         && pc->TestFlags(PCF_IN_PREPROC))
    {
-      pc = g_cl.GetPrev(pc);
-   }
-
-   if (  pc == nullptr
-      || pc->IsNullChunk())
-   {
-      return(NullChunkPtr);
+      pc = pc->m_prev;
    }
    return(pc);
 } // Chunk::GetPrev
 
 
-static void chunk_log(Chunk *pc, const char *text);
+static void chunk_log(const Chunk *pc, const char *text);
 
 
-/*
- * TODO: if we use C++ we can overload the following two functions
- * and thus name them equally
- */
-
-/**
- * @brief search a chunk of a given category in a chunk list
- *
- * traverses a chunk list either in forward or backward direction.
- * The traversal continues until a chunk of a given category is found.
- *
- * This function is a specialization of Chunk::Search.
- *
- * @param cur    chunk to start search at
- * @param type   category to search for
- * @param scope  code parts to consider for search
- * @param dir    search direction
- *
- * @retval nullptr  no chunk found or invalid parameters provided
- * @retval Chunk  pointer to the found chunk
- */
-static Chunk *chunk_search_type(Chunk *cur, const E_Token type, const E_Scope scope = E_Scope::ALL, const E_Direction dir = E_Direction::FORWARD);
-
-
-/**
- * @brief Add a new chunk before/after the given position in a chunk list
- *
- * If ref is nullptr, add either at the head or tail based on the specified pos
- *
- * @param  pc_in  chunk to add to list
- * @param  ref    insert position in list
- * @param  pos    insert before or after
- *
- * @return Chunk  pointer to the added chunk
- */
-static Chunk *chunk_add(const Chunk *pc_in, Chunk *ref, const E_Direction pos = E_Direction::FORWARD);
-
-
-Chunk *Chunk::GetHead(void)
+Chunk *Chunk::GetHead()
 {
-   Chunk *ret = g_cl.GetHead();
-
-   if (ret == nullptr)
-   {
-      return(Chunk::NullChunkPtr);
-   }
-   return(ret);
-}
+   return(gChunkList.GetHead());
+} // Chunk::GetHead
 
 
-Chunk *Chunk::GetTail(void)
+Chunk *Chunk::GetTail()
 {
-   Chunk *ret = g_cl.GetTail();
-
-   if (ret == nullptr)
-   {
-      return(Chunk::NullChunkPtr);
-   }
-   return(ret);
-}
+   return(gChunkList.GetTail());
+} // Chunk::GetTail
 
 
 Chunk::T_SearchFnPtr Chunk::GetSearchFn(const E_Direction dir)
 {
    return((dir == E_Direction::FORWARD) ? &Chunk::GetNext : &Chunk::GetPrev);
-}
+} // Chunk::GetSearchFn
 
 
 Chunk *Chunk::Search(const T_CheckFnPtr checkFn, const E_Scope scope,
@@ -327,113 +215,77 @@ Chunk *Chunk::Search(const T_CheckFnPtr checkFn, const E_Scope scope,
    T_SearchFnPtr searchFnPtr = GetSearchFn(dir);
    Chunk         *pc         = const_cast<Chunk *>(this);
 
+   //LOG_FMT(LSETTYP, "\n%s(%d): origLine is %zu, origCol is %zu\n",
+   //        __func__, __LINE__, pc->GetOrigLine(), pc->GetOrigCol());
+
    do                                      // loop over the chunk list
    {
       pc = (pc->*searchFnPtr)(scope);      // in either direction while
+      //LOG_FMT(LSETTYP, "%s(%d): origLine is %zu, origCol is %zu, type is %s\n",
+      //        __func__, __LINE__, pc->GetOrigLine(), pc->GetOrigCol(), get_token_name(pc->GetType()));
    } while (  pc->IsNotNullChunk()         // the end of the list was not reached yet
            && ((pc->*checkFn)() != cond)); // and the demanded chunk was not found either
 
    return(pc);                             // the latest chunk is the searched one
-}
+} // Chunk::Search
 
 
-Chunk *chunk_search_prev_cat(Chunk *pc, const E_Token cat)
+bool Chunk::IsOnSameLine(const Chunk *end) const
 {
-   return(chunk_search_type(pc, cat, E_Scope::ALL, E_Direction::BACKWARD));
-}
-
-
-Chunk *chunk_search_next_cat(Chunk *pc, const E_Token cat)
-{
-   return(chunk_search_type(pc, cat, E_Scope::ALL, E_Direction::FORWARD));
-}
-
-
-bool are_chunks_in_same_line(Chunk *start, Chunk *end)
-{
-   if (start == nullptr)
+   if (IsNullChunk())
    {
       return(false);
    }
-   Chunk *tmp = start->GetNext();
+   const Chunk *tmp = GetNext();
 
    while (  tmp->IsNotNullChunk()
          && tmp != end)
    {
-      if (chunk_is_token(tmp, CT_NEWLINE))
+      if (tmp->Is(E_Token::CT_NEWLINE))
       {
          return(false);
       }
       tmp = tmp->GetNext();
    }
    return(true);
-}
+} // Chunk::IsOnSameLine
 
 
-static Chunk *chunk_search_type(Chunk *cur, const E_Token type,
-                                const E_Scope scope, const E_Direction dir)
-{
-   /*
-    * Depending on the parameter dir the search function searches
-    * in forward or backward direction
-    */
-   Chunk::T_SearchFnPtr search_function = Chunk::GetSearchFn(dir);
-   Chunk                *pc             = cur;
-
-   if (pc == nullptr)
-   {
-      pc = Chunk::NullChunkPtr;
-   }
-
-   do                                     // loop over the chunk list
-   {
-      pc = (pc->*search_function)(scope); // in either direction while
-   } while (  pc->IsNotNullChunk()        // the end of the list was not reached yet
-           && pc->type != type);          // and the demanded chunk was not found either
-
-   if (pc->IsNullChunk())
-   {
-      pc = nullptr;
-   }
-   return(pc);                            // the latest chunk is the searched one
-}
-
-
-Chunk *Chunk::SearchTypeLevel(const E_Token cType, const E_Scope scope,
-                              const E_Direction dir, const int cLevel) const
+Chunk *Chunk::SearchTypeLevel(const E_Token type, const E_Scope scope,
+                              const E_Direction dir, const int level) const
 {
    T_SearchFnPtr searchFnPtr = GetSearchFn(dir);
    Chunk         *pc         = const_cast<Chunk *>(this);
 
-   do                                                // loop over the chunk list
+   do                                              // loop over the chunk list
    {
-      pc = (pc->*searchFnPtr)(scope);                // in either direction while
-   } while (  pc->IsNotNullChunk()                   // the end of the list was not reached yet
-           && (!pc->IsTypeAndLevel(cType, cLevel))); // and the chunk was not found either
+      pc = (pc->*searchFnPtr)(scope);              // in either direction while
+   } while (  pc->IsNotNullChunk()                 // the end of the list was not reached yet
+           && (!pc->IsTypeAndLevel(type, level))); // and the chunk was not found either
 
-   return(pc);                                       // the latest chunk is the searched one
-}
+   return(pc);                                     // the latest chunk is the searched one
+} // Chunk::SearchTypeLevel
 
 
-Chunk *Chunk::SearchStringLevel(const char *cStr, const size_t len, int cLevel,
+Chunk *Chunk::SearchStringLevel(const char *str, const size_t len, int level,
                                 const E_Scope scope, const E_Direction dir) const
 {
    T_SearchFnPtr searchFnPtr = GetSearchFn(dir);
    Chunk         *pc         = const_cast<Chunk *>(this);
 
-   do                                                // loop over the chunk list
+   do                                                        // loop over the chunk list
    {
-      pc = (pc->*searchFnPtr)(scope);                // in either direction while
-   } while (  pc->IsNotNullChunk()                       // the end of the list was not reached yet
-           && !pc->IsStringAndLevel(cStr, len, cLevel)); // and the demanded chunk was not found either
+      pc = (pc->*searchFnPtr)(scope);                        // in either direction while
+   } while (  pc->IsNotNullChunk()                           // the end of the list was not reached yet
+           && !pc->IsStringAndLevel(str, len, true, level)); // and the demanded chunk was not found either
 
-   return(pc);                                           // the latest chunk is the searched one
-}
+   return(pc);                                               // the latest chunk is the searched one
+} // Chunk::SearchStringLevel
 
 
 Chunk *Chunk::SearchPpa(const T_CheckFnPtr checkFn, const bool cond) const
 {
-   if (!flags.test(PCF_IN_PREPROC))
+   if (!TestFlags(PCF_IN_PREPROC))
    {
       // if not in preprocessor, do a regular search
       return(Search(checkFn, E_Scope::ALL, E_Direction::FORWARD, cond));
@@ -442,15 +294,15 @@ Chunk *Chunk::SearchPpa(const T_CheckFnPtr checkFn, const bool cond) const
 
    while (pc->IsNotNullChunk())
    {
-      if (!pc->flags.test(PCF_IN_PREPROC))
+      if (!pc->TestFlags(PCF_IN_PREPROC))
       {
          // Bail if we run off the end of the preprocessor directive, but return
          // the token because the caller may need to know where the search ended
-         assert(chunk_is_token(pc, CT_NEWLINE));
+         assert(pc->Is(E_Token::CT_NEWLINE));
          return(pc);
       }
 
-      if (chunk_is_token(pc, CT_NL_CONT))
+      if (pc->Is(E_Token::CT_NL_CONT))
       {
          // Skip line continuation
          pc = pc->GetNext();
@@ -466,291 +318,159 @@ Chunk *Chunk::SearchPpa(const T_CheckFnPtr checkFn, const bool cond) const
    }
    // Ran out of tokens
    return(Chunk::NullChunkPtr);
-}
+} // Chunk::SearchPpa
 
 
-static void chunk_log_msg(Chunk *chunk, const log_sev_t log, const char *str)
+static void chunk_log_msg(const Chunk *chunk, const log_sev_t log, const char *str)
 {
-   LOG_FMT(log, "%s orig_line is %zu, orig_col is %zu, ",
-           str, chunk->orig_line, chunk->orig_col);
+   LOG_FMT(log, "%s orig line is %zu, orig col is %zu, ",
+           str, chunk->GetOrigLine(), chunk->GetOrigCol());
 
-   if (chunk_is_token(chunk, CT_NEWLINE))
+   if (chunk->Is(E_Token::CT_NEWLINE))
    {
       LOG_FMT(log, "<Newline>,\n");
    }
-   else if (chunk_is_token(chunk, CT_VBRACE_OPEN))
+   else if (chunk->Is(E_Token::CT_VBRACE_OPEN))
    {
       LOG_FMT(log, "<VBRACE_OPEN>,\n");
    }
-   else if (chunk_is_token(chunk, CT_VBRACE_CLOSE))
+   else if (chunk->Is(E_Token::CT_VBRACE_CLOSE))
    {
       LOG_FMT(log, "<VBRACE_CLOSE>,\n");
    }
    else
    {
-      LOG_FMT(log, "Text() is '%s', type is %s,\n", chunk->Text(), get_token_name(chunk->type));
+      LOG_FMT(log, "text is '%s', type is %s,\n", chunk->GetLogText(), get_token_name(chunk->GetType()));
    }
-}
+} // chunk_log_msg
 
 
-static void chunk_log(Chunk *pc, const char *text)
+static void chunk_log(const Chunk *pc, const char *text)
 {
-   if (  pc != nullptr
-      && pc->IsNotNullChunk()
-      && (cpd.unc_stage != unc_stage_e::TOKENIZE)
-      && (cpd.unc_stage != unc_stage_e::CLEANUP))
+   if (  pc->IsNullChunk()
+      || (  cpd.unc_stage != unc_stage_e::TOKENIZE
+         && cpd.unc_stage != unc_stage_e::CLEANUP))
    {
-      const log_sev_t log   = LCHUNK;
-      Chunk           *prev = pc->GetPrev();
-      Chunk           *next = pc->GetNext();
-
-      chunk_log_msg(pc, log, text);
-
-      if (  prev->IsNotNullChunk()
-         && next->IsNotNullChunk())
-      {
-         chunk_log_msg(prev, log, "   @ between");
-         chunk_log_msg(next, log, "   and");
-      }
-      else if (next->IsNotNullChunk())
-      {
-         chunk_log_msg(next, log, "   @ before");
-      }
-      else if (prev->IsNotNullChunk())
-      {
-         chunk_log_msg(prev, log, "   @ after");
-      }
-      LOG_FMT(log, "   stage is %s",                             // Issue #3034
-              get_unc_stage_name(cpd.unc_stage));
-      log_func_stack_inline(log);
+      return;
    }
-}
+   const log_sev_t log   = LCHUNK;
+   const Chunk     *prev = pc->GetPrev();
+   const Chunk     *next = pc->GetNext();
+
+   chunk_log_msg(pc, log, text);
+
+   if (  prev->IsNotNullChunk()
+      && next->IsNotNullChunk())
+   {
+      chunk_log_msg(prev, log, "   @ between");
+      chunk_log_msg(next, log, "   and");
+   }
+   else if (next->IsNotNullChunk())
+   {
+      chunk_log_msg(next, log, "   @ before");
+   }
+   else if (prev->IsNotNullChunk())
+   {
+      chunk_log_msg(prev, log, "   @ after");
+   }
+   LOG_FMT(log, "   stage is %s",                             // Issue #3034
+           get_unc_stage_name(cpd.unc_stage));
+   log_func_stack_inline(log);
+} // chunk_log
 
 
-Chunk *chunk_add_after(const Chunk *pc_in, Chunk *ref)
+void Chunk::Delete(Chunk * &pc)
 {
-   return(chunk_add(pc_in, ref, E_Direction::FORWARD));
-}
-
-
-Chunk *chunk_add_before(const Chunk *pc_in, Chunk *ref)
-{
-   return(chunk_add(pc_in, ref, E_Direction::BACKWARD));
-}
-
-
-void chunk_del(Chunk * &pc)
-{
-   g_cl.Pop(pc);
+   gChunkList.Remove(pc);
    delete pc;
-   pc = nullptr;
-}
+   pc = Chunk::NullChunkPtr;
+} // Chunk::Delete
 
 
-void chunk_move_after(Chunk *pc_in, Chunk *ref)
+void Chunk::MoveAfter(Chunk *ref)
 {
    LOG_FUNC_ENTRY();
-   g_cl.Pop(pc_in);
-   g_cl.AddAfter(pc_in, ref);
 
-   // HACK: Adjust the original column
-   pc_in->column       = ref->column + space_col_align(ref, pc_in);
-   pc_in->orig_col     = pc_in->column;
-   pc_in->orig_col_end = pc_in->orig_col + pc_in->Len();
-}
-
-
-Chunk *Chunk::GetNextNl(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsNewline, scope, E_Direction::FORWARD, true));
-}
-
-
-Chunk *Chunk::GetPrevNl(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsNewline, scope, E_Direction::BACKWARD, true));
-}
-
-
-Chunk *Chunk::GetNextNnl(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsNewline, scope, E_Direction::FORWARD, false));
-}
-
-
-Chunk *Chunk::GetPrevNnl(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsNewline, scope, E_Direction::BACKWARD, false));
-}
-
-
-Chunk *Chunk::GetNextNc(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsComment, scope, E_Direction::FORWARD, false));
-}
-
-
-Chunk *Chunk::GetPrevNc(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsComment, scope, E_Direction::BACKWARD, false));
-}
-
-
-Chunk *Chunk::GetNextNcNnl(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsCommentOrNewline, scope, E_Direction::FORWARD, false));
-}
-
-
-Chunk *Chunk::GetPrevNcNnl(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsCommentOrNewline, scope, E_Direction::BACKWARD, false));
-}
-
-
-Chunk *Chunk::GetNextNcNnlNpp(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsCommentNewlineOrPreproc, scope, E_Direction::FORWARD, false));
-}
-
-
-Chunk *Chunk::GetPrevNcNnlNpp(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsCommentNewlineOrPreproc, scope, E_Direction::BACKWARD, false));
-}
-
-
-Chunk *Chunk::GetNextNppOrNcNnl(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsCommentOrNewlineInPreproc, scope, E_Direction::FORWARD, false));
-}
-
-
-Chunk *Chunk::GetPrevNppOrNcNnl(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsCommentOrNewlineInPreproc, scope, E_Direction::BACKWARD, false));
-}
-
-
-Chunk *Chunk::PpaGetNextNcNnl() const
-{
-   return(SearchPpa(&Chunk::IsCommentOrNewline, false));
-}
-
-
-Chunk *Chunk::GetNextNcNnlNet(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsCommentNewlineOrEmptyText, scope, E_Direction::FORWARD, false));
-}
-
-
-Chunk *Chunk::GetPrevNcNnlNet(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsCommentNewlineOrEmptyText, scope, E_Direction::BACKWARD, false));
-}
-
-
-Chunk *Chunk::GetPrevNcNnlNi(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsCommentNewlineOrIgnored, scope, E_Direction::BACKWARD, false));
-}
-
-
-Chunk *Chunk::GetNextNisq(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsSquareBracket, scope, E_Direction::FORWARD, false));
-}
-
-
-Chunk *Chunk::GetNextType(const E_Token cType, const int cLevel, const E_Scope scope) const
-{
-   return(SearchTypeLevel(cType, scope, E_Direction::FORWARD, cLevel));
-}
-
-
-Chunk *Chunk::GetPrevType(const E_Token cType, const int cLevel, const E_Scope scope) const
-{
-   return(SearchTypeLevel(cType, scope, E_Direction::BACKWARD, cLevel));
-}
-
-
-Chunk *Chunk::GetNextString(const char *cStr, const size_t len, const int cLevel, const E_Scope scope) const
-{
-   return(SearchStringLevel(cStr, len, cLevel, scope, E_Direction::FORWARD));
-}
-
-
-Chunk *Chunk::GetPrevString(const char *cStr, const size_t len, const int cLevel, const E_Scope scope) const
-{
-   return(SearchStringLevel(cStr, len, cLevel, scope, E_Direction::BACKWARD));
-}
-
-
-bool chunk_is_newline_between(Chunk *start, Chunk *end)
-{
-   for (Chunk *pc = start; pc != nullptr && pc != end; pc = pc->GetNext())
+   if (ref == this)
    {
-      if (chunk_is_newline(pc))
+      return;
+   }
+   gChunkList.Remove(this);
+   gChunkList.AddAfter(this, ref);
+
+   // Adjust the original column
+   m_column     = ref->m_column + space_col_align(ref, this);
+   m_origCol    = m_column;
+   m_origColEnd = m_origCol + Len();
+} // Chunk::MoveAfter
+
+
+void Chunk::Swap(Chunk *other)
+{
+   gChunkList.Swap(this, other);
+} // Chunk::Swap
+
+
+bool Chunk::IsAddress() const
+{
+   if (  IsNotNullChunk()
+      && (  Is(E_Token::CT_BYREF)
+         || (  Len() == 1
+            && m_text[0] == '&'
+            && IsNot(E_Token::CT_OPERATOR_VAL))))
+   {
+      const Chunk *prevc = GetPrev();
+
+      if (  TestFlags(PCF_IN_TEMPLATE)
+         && (  prevc->Is(E_Token::CT_COMMA)
+            || prevc->Is(E_Token::CT_ANGLE_OPEN)))
       {
-         return(true);
+         return(false);
       }
+      return(true);
    }
-
    return(false);
-}
+} // Chunk::IsAddress
 
 
-void chunk_swap(Chunk *pc1, Chunk *pc2)
+Chunk *Chunk::GetFirstChunkOnLine() const
 {
-   g_cl.Swap(pc1, pc2);
-}
-
-
-// TODO: the following function shall be made similar to the search functions
-Chunk *chunk_first_on_line(Chunk *pc)
-{
-   if (  pc == nullptr
-      || pc->IsNullChunk())
-   {
-      return(Chunk::NullChunkPtr);
-   }
+   Chunk *pc    = const_cast<Chunk *>(this);
    Chunk *first = pc;
 
-   while (  (pc = pc->GetPrev())->IsNotNullChunk()
-         && !chunk_is_newline(pc))
+   pc = pc->GetPrev();
+
+   while (  pc->IsNotNullChunk()
+         && !pc->IsNewline())
    {
       first = pc;
+      pc    = pc->GetPrev();
    }
    return(first);
-}
+} // Chunk::GetFirstChunkOnLine
 
 
-bool chunk_is_last_on_line(Chunk *pc)  //TODO: pc should be const here
+bool Chunk::IsLastChunkOnLine() const
 {
-   // check if pc is the very last chunk of the file
-   const Chunk *end = Chunk::GetTail();
-
-   if (pc == end)
+   if (this == Chunk::GetTail())
    {
       return(true);
    }
-   // if the next chunk is a newline then pc is the last chunk on its line
-   const Chunk *next = pc->GetNext();
 
-   if (chunk_is_token(next, CT_NEWLINE))
+   // if the next chunk is a newline then pc is the last chunk on its line
+   if (GetNext()->Is(E_Token::CT_NEWLINE))
    {
       return(true);
    }
    return(false);
-}
+} // Chunk::IsLastChunkOnLine
 
 
-// TODO: this function needs some cleanup
-void chunk_swap_lines(Chunk *pc1, Chunk *pc2)
+void Chunk::SwapLines(Chunk const *other)
 {
    // to swap lines we need to find the first chunk of the lines
-   pc1 = chunk_first_on_line(pc1);
-   pc2 = chunk_first_on_line(pc2);
+   Chunk *pc1 = GetFirstChunkOnLine();
+   Chunk *pc2 = other->GetFirstChunkOnLine();
 
    if (  pc1->IsNullChunk()
       || pc2->IsNullChunk()
@@ -767,11 +487,11 @@ void chunk_swap_lines(Chunk *pc1, Chunk *pc2)
 
    // Move the line started at pc2 before pc1
    while (  pc2->IsNotNullChunk()
-         && !chunk_is_newline(pc2))
+         && !pc2->IsNewline())
    {
       Chunk *tmp = pc2->GetNext();
-      g_cl.Pop(pc2);
-      g_cl.AddBefore(pc2, pc1);
+      gChunkList.Remove(pc2);
+      gChunkList.AddBefore(pc2, pc1);
       pc2 = tmp;
    }
    /*
@@ -782,18 +502,18 @@ void chunk_swap_lines(Chunk *pc1, Chunk *pc2)
 
    // Now move the line started at pc1 after ref2
    while (  pc1->IsNotNullChunk()
-         && !chunk_is_newline(pc1))
+         && !pc1->IsNewline())
    {
       Chunk *tmp = pc1->GetNext();
-      g_cl.Pop(pc1);
+      gChunkList.Remove(pc1);
 
       if (ref2->IsNotNullChunk())
       {
-         g_cl.AddAfter(pc1, ref2);
+         gChunkList.AddAfter(pc1, ref2);
       }
       else
       {
-         g_cl.AddHead(pc1);
+         gChunkList.AddHead(pc1);
       }
       ref2 = pc1;
       pc1  = tmp;
@@ -806,143 +526,128 @@ void chunk_swap_lines(Chunk *pc1, Chunk *pc2)
 
    /*
     * pc1 and pc2 should be the newlines for their lines.
-    * swap the chunks and the nl_count so that the spacing remains the same.
+    * swap the chunks and the new line count so that the spacing remains the same.
     */
    if (  pc1->IsNotNullChunk()
       && pc2->IsNotNullChunk())
    {
-      size_t nl_count = pc1->nl_count;
+      size_t nlCount = pc1->GetNlCount();
 
-      pc1->nl_count = pc2->nl_count;
-      pc2->nl_count = nl_count;
+      pc1->SetNlCount(pc2->GetNlCount());
+      pc2->SetNlCount(nlCount);
 
-      chunk_swap(pc1, pc2);
+      pc1->Swap(pc2);
    }
-} // chunk_swap_lines
+} // Chunk::SwapLines
 
 
-Chunk *Chunk::GetNextNvb(const E_Scope scope) const
+void Chunk::SetResetFlags(PcfFlags resetBits, PcfFlags setBits)
 {
-   return(Search(&Chunk::IsVBrace, scope, E_Direction::FORWARD, false));
-}
-
-
-Chunk *Chunk::GetPrevNvb(const E_Scope scope) const
-{
-   return(Search(&Chunk::IsVBrace, scope, E_Direction::BACKWARD, false));
-}
-
-
-void chunk_flags_set_real(Chunk *pc, pcf_flags_t clr_bits, pcf_flags_t set_bits)
-{
-   if (  pc != nullptr
-      && pc->IsNotNullChunk())
+   if (IsNotNullChunk())
    {
       LOG_FUNC_ENTRY();
-      auto const nflags = (pc->flags & ~clr_bits) | set_bits;
+      const PcfFlags newFlags = (m_flags & ~resetBits) | setBits;
 
-      if (pc->flags != nflags)
+      if (m_flags != newFlags)
       {
          LOG_FMT(LSETFLG,
                  "%s(%d): %016llx^%016llx=%016llx\n"
-                 "   orig_line is %zu, orig_col is %zu, Text() '%s', type is %s,",
+                 "%s(%d): orig line is %zu, orig col is %zu, text is '%s', type is %s,",
                  __func__, __LINE__,
-                 static_cast<pcf_flags_t::int_t>(pc->flags),
-                 static_cast<pcf_flags_t::int_t>(pc->flags ^ nflags),
-                 static_cast<pcf_flags_t::int_t>(nflags),
-                 pc->orig_line, pc->orig_col, pc->Text(),
-                 get_token_name(pc->type));
-         LOG_FMT(LSETFLG, " parent_type is %s,\n  ",
-                 get_token_name(get_chunk_parent_type(pc)));
+                 static_cast<PcfFlags::int_t>(m_flags),
+                 static_cast<PcfFlags::int_t>(m_flags ^ newFlags),
+                 static_cast<PcfFlags::int_t>(newFlags),
+                 __func__, __LINE__, m_origLine, m_origCol, GetLogText(), get_token_name(m_type));
+         LOG_FMT(LSETFLG, "  parent type is %s,\n",
+                 get_token_name(m_parentType));
          log_func_stack_inline(LSETFLG);
-         pc->flags = nflags;
+
+         LOG_FMT(LSETFLG, "  before: ");
+         log_pcf_flags(LSETFLG, m_flags);
+         LOG_FMT(LSETFLG, "  after:  ");
+         log_pcf_flags(LSETFLG, newFlags);
+         m_flags = newFlags;
       }
    }
-}
+} // Chunk::SetResetFlags
 
 
-void set_chunk_type_real(Chunk *pc, E_Token token, const char *func, int line)
+void Chunk::SetType(const E_Token token)
 {
    LOG_FUNC_ENTRY();
 
-   if (  pc == nullptr
-      || pc->IsNullChunk()
-      || pc->type == token)
+   if (  IsNullChunk()
+      || m_type == token)
    {
       return;
    }
-   LOG_FMT(LSETTYP, "%s(%d): orig_line is %zu, orig_col is %zu, pc->Text() ",
-           func, line, pc->orig_line, pc->orig_col);
+   LOG_FMT(LSETTYP, "%s(%d): m_origLine is %zu, m_origCol is %zu, text is ",
+           __func__, __LINE__, m_origLine, m_origCol);
 
-   if (token == CT_NEWLINE)
+   if (token == E_Token::CT_NEWLINE)
    {
-      LOG_FMT(LSETTYP, "<Newline>\n");
+      LOG_FMT(LSETTYP, "<newline (NL)>");
+      Text() = "\n";
+   }
+   else if (token == E_Token::CT_NL_CONT)
+   {
+      LOG_FMT(LSETTYP, "<newline (NL CONT)>");
+      Text() = "\\\n";
+   }
+   else if (token == E_Token::CT_WHITESPACE)
+   {
+      LOG_FMT(LSETTYP, "<whitespace>");
    }
    else
    {
-      LOG_FMT(LSETTYP, "'%s'\n", pc->Text());
+      LOG_FMT(LSETTYP, "'%s'", GetLogText());
    }
-   LOG_FMT(LSETTYP, "   pc->type is %s, pc->parent_type is %s => *type is %s, *parent_type is %s\n",
-           get_token_name(pc->type), get_token_name(get_chunk_parent_type(pc)),
-           get_token_name(token), get_token_name(get_chunk_parent_type(pc)));
-   pc->type = token;
-} // set_chunk_type_real
+   LOG_FMT(LSETTYP, ", len is %zu\n", Len());
+   LOG_FMT(LSETTYP, "   m_type is %s, m_parentType is %s => token is %s\n",
+           get_token_name(m_type), get_token_name(m_parentType), get_token_name(token));
+   m_type = token;
+} // Chunk::SetType
 
 
-void set_chunk_parent_real(Chunk *pc, E_Token token, const char *func, int line)
+void Chunk::SetParentType(const E_Token token)
 {
    LOG_FUNC_ENTRY();
 
-   if (  pc == nullptr
-      || pc->IsNullChunk()
-      || get_chunk_parent_type(pc) == token)
+   if (  IsNullChunk()
+      || m_parentType == token)
    {
       return;
    }
-   LOG_FMT(LSETPAR, "%s(%d): orig_line is %zu, orig_col is %zu, pc->Text() ",
-           func, line, pc->orig_line, pc->orig_col);
+   LOG_FMT(LSETPAR, "%s(%d): orig line is %zu, orig col is %zu, text is ",
+           __func__, __LINE__, m_origLine, m_origCol);
 
-   if (token == CT_NEWLINE)
+   if (token == E_Token::CT_NEWLINE)
    {
       LOG_FMT(LSETPAR, "<Newline>\n");
    }
    else
    {
-      char copy[1000];
-      LOG_FMT(LSETPAR, "'%s'\n", pc->ElidedText(copy));
+      LOG_FMT(LSETPAR, "'%s'\n", GetLogText());
    }
-   LOG_FMT(LSETPAR, "   pc->type is %s, pc->parent_type is %s => *type is %s, *parent_type is %s\n",
-           get_token_name(pc->type), get_token_name(get_chunk_parent_type(pc)),
-           get_token_name(token), get_token_name(get_chunk_parent_type(pc)));
-   pc->parent_type = token;
-} // set_chunk_parent_real
+   LOG_FMT(LSETPAR, "   type is %s, parent type is %s => new parent type is %s\n",
+           get_token_name(m_type), get_token_name(m_parentType), get_token_name(token));
+   m_parentType = token;
+} // Chunk::SetParentType
 
 
-E_Token get_chunk_parent_type(Chunk *pc)
-{
-   LOG_FUNC_ENTRY();
-
-   if (pc == nullptr)
-   {
-      return(CT_NONE);
-   }
-   return(pc->parent_type);
-} // get_chunk_parent_type
-
-
-static Chunk *chunk_add(const Chunk *pc_in, Chunk *ref, const E_Direction pos)
+Chunk *Chunk::CopyAndAdd(Chunk *pos, const E_Direction dir) const
 {
 #ifdef DEBUG
-   // test if the pc_in chunk is properly set
-   if (pc_in->pp_level == 999)
+   // test if this chunk is properly set
+   if (m_ppLevel == 999)
    {
-      fprintf(stderr, "%s(%d): pp_level is not set\n", __func__, __LINE__);
+      fprintf(stderr, "%s(%d): pp level is not set\n", __func__, __LINE__);
       log_func_stack_inline(LSETFLG);
       log_flush(true);
       exit(EX_SOFTWARE);
    }
 
-   if (pc_in->orig_line == 0)
+   if (m_origLine == 0)
    {
       fprintf(stderr, "%s(%d): no line number\n", __func__, __LINE__);
       log_func_stack_inline(LSETFLG);
@@ -950,7 +655,7 @@ static Chunk *chunk_add(const Chunk *pc_in, Chunk *ref, const E_Direction pos)
       exit(EX_SOFTWARE);
    }
 
-   if (pc_in->orig_col == 0)
+   if (m_origCol == 0)
    {
       fprintf(stderr, "%s(%d): no column number\n", __func__, __LINE__);
       log_func_stack_inline(LSETFLG);
@@ -959,209 +664,340 @@ static Chunk *chunk_add(const Chunk *pc_in, Chunk *ref, const E_Direction pos)
    }
 #endif /* DEBUG */
 
-   Chunk *pc = new Chunk(*pc_in);
+   Chunk *pc = new Chunk(*this);
 
-   if (pc != nullptr)
+   if (pos->IsNotNullChunk())
    {
-      if (ref != nullptr) // ref is a valid chunk
+      (dir == E_Direction::FORWARD) ? gChunkList.AddAfter(pc, pos) : gChunkList.AddBefore(pc, pos);
+   }
+   else
+   {
+      (dir == E_Direction::FORWARD) ? gChunkList.AddHead(pc) : gChunkList.AddTail(pc);
+   }
+   chunk_log(pc, "CopyAndAdd(A):");
+   return(pc);
+} // Chunk::CopyAndAdd
+
+
+Chunk *Chunk::GetNextNbsb() const
+{
+   Chunk *pc = const_cast<Chunk *>(this);
+
+   while (  pc->Is(E_Token::CT_TSQUARE)
+         || pc->Is(E_Token::CT_SQUARE_OPEN))
+   {
+      if (pc->Is(E_Token::CT_SQUARE_OPEN))
       {
-         (pos == E_Direction::FORWARD) ? g_cl.AddAfter(pc, ref) : g_cl.AddBefore(pc, ref);
+         pc = pc->GetClosingParen();
       }
-      else // ref == NULL
-      {
-         (pos == E_Direction::FORWARD) ? g_cl.AddHead(pc) : g_cl.AddTail(pc);
-      }
-      chunk_log(pc, "chunk_add(A):");
+      pc = pc->GetNextNcNnl();
    }
    return(pc);
-} // chunk_add
+} // Chunk::GetNextNbsb
 
 
-Chunk *chunk_get_next_ssq(Chunk *cur)
+Chunk *Chunk::GetPrevNbsb() const
 {
-   while (  chunk_is_token(cur, CT_TSQUARE)
-         || chunk_is_token(cur, CT_SQUARE_OPEN))
+   Chunk *pc = const_cast<Chunk *>(this);
+
+   while (  pc->Is(E_Token::CT_TSQUARE)
+         || pc->Is(E_Token::CT_SQUARE_CLOSE))
    {
-      if (chunk_is_token(cur, CT_SQUARE_OPEN))
+      if (pc->Is(E_Token::CT_SQUARE_CLOSE))
       {
-         cur = chunk_skip_to_match(cur);
+         pc = pc->GetOpeningParen();
       }
-      cur = cur->GetNextNcNnl();
+      pc = pc->GetPrevNcNnl();
    }
-   return(cur);
-}
+   return(pc);
+} // Chunk::GetPrevNbsb
 
 
-Chunk *chunk_get_prev_ssq(Chunk *cur)
+Chunk *Chunk::GetPpStart() const
 {
-   while (  chunk_is_token(cur, CT_TSQUARE)
-         || chunk_is_token(cur, CT_SQUARE_CLOSE))
+   if (!IsPreproc())
    {
-      if (chunk_is_token(cur, CT_SQUARE_CLOSE))
-      {
-         cur = chunk_skip_to_match_rev(cur);
-      }
-      cur = cur->GetPrevNcNnl();
+      return(Chunk::NullChunkPtr);
    }
-   return(cur);
-}
+   Chunk *pc = const_cast<Chunk *>(this);
+   Chunk *prev;
 
-
-Chunk *chunk_get_pp_start(Chunk *cur)
-{
-   if (!cur->IsPreproc())
+   do
    {
-      return(nullptr);
-   }
+      prev = pc;
+      pc   = pc->GetPrev(E_Scope::PREPROC);
+   } while (pc->IsPreproc());
 
-   while (!chunk_is_token(cur, CT_PREPROC))
-   {
-      cur = cur->GetPrev(E_Scope::PREPROC);
-   }
-   return(cur);
-}
+   return(prev);
+} // Chunk::GetPpStart
 
 
-//! skip to the final word/type in a :: chain
-static Chunk *chunk_skip_dc_member(Chunk *start, E_Scope scope, E_Direction dir)
+Chunk *Chunk::SkipDcMember() const
 {
    LOG_FUNC_ENTRY();
 
-   if (start == nullptr)
-   {
-      return(nullptr);
-   }
-   const auto step_fcn = (dir == E_Direction::FORWARD)
-                         ? &Chunk::GetNextNcNnl : &Chunk::GetPrevNcNnl;
+   Chunk       *pc  = const_cast<Chunk *>(this);
+   const Chunk *nxt = pc->Is(E_Token::CT_DC_MEMBER) ? pc : pc->GetNextNcNnl(E_Scope::ALL);
 
-   Chunk *pc   = start;
-   Chunk *next = chunk_is_token(pc, CT_DC_MEMBER) ? pc : (pc->*step_fcn)(scope);
-
-   while (chunk_is_token(next, CT_DC_MEMBER))
+   while (nxt->Is(E_Token::CT_DC_MEMBER))
    {
-      pc = (next->*step_fcn)(scope);
+      pc = nxt->GetNextNcNnl(E_Scope::ALL);
 
       if (pc->IsNullChunk())
       {
          return(Chunk::NullChunkPtr);
       }
-      next = (pc->*step_fcn)(scope);
+      nxt = pc->GetNextNcNnl(E_Scope::ALL);
    }
    return(pc);
-}
+} // Chunk::SkipDcMember
 
 
-Chunk *chunk_skip_dc_member(Chunk *start, E_Scope scope)
+int Chunk::ComparePosition(const Chunk *other) const
 {
-   return(chunk_skip_dc_member(start, scope, E_Direction::FORWARD));
-}
-
-
-Chunk *chunk_skip_dc_member_rev(Chunk *start, E_Scope scope)
-{
-   return(chunk_skip_dc_member(start, scope, E_Direction::BACKWARD));
-}
-
-
-// set parent member
-void chunk_set_parent(Chunk *pc, Chunk *parent)
-{
-   if (pc == nullptr)
-   {
-      return;
-   }
-
-   if (parent == nullptr)
-   {
-      return;
-   }
-
-   if (pc == parent)
-   {
-      return;
-   }
-   pc->parent = parent;
-}
-
-
-E_Token get_type_of_the_parent(Chunk *pc)
-{
-   if (pc == nullptr)
-   {
-      return(CT_UNKNOWN);
-   }
-
-   if (pc->parent == nullptr)
-   {
-      return(CT_PARENT_NOT_SET);
-   }
-   return(pc->parent->type);
-}
-
-
-bool chunk_is_attribute_or_declspec(Chunk *pc)
-{
-   return(  language_is_set(LANG_CPP)
-         && (  chunk_is_token(pc, CT_ATTRIBUTE)
-            || chunk_is_token(pc, CT_DECLSPEC)));
-}
-
-
-bool chunk_is_class_enum_struct_union(Chunk *pc)
-{
-   return(  chunk_is_class_or_struct(pc)
-         || chunk_is_enum(pc)
-         || chunk_is_token(pc, CT_UNION));
-}
-
-
-bool chunk_is_class_or_struct(Chunk *pc)
-{
-   return(  chunk_is_token(pc, CT_CLASS)
-         || chunk_is_token(pc, CT_STRUCT));
-}
-
-
-bool chunk_is_class_struct_union(Chunk *pc)
-{
-   return(  chunk_is_class_or_struct(pc)
-         || chunk_is_token(pc, CT_UNION));
-}
-
-
-bool chunk_is_enum(Chunk *pc)
-{
-   return(  chunk_is_token(pc, CT_ENUM)
-         || chunk_is_token(pc, CT_ENUM_CLASS));
-}
-
-
-int chunk_compare_position(const Chunk *A_token, const Chunk *B_token)
-{
-   if (A_token == nullptr)
-   {
-      assert(A_token);
-   }
-
-   if (B_token == nullptr)
-   {
-      assert(B_token);
-   }
-
-   if (A_token->orig_line < B_token->orig_line)
+   if (m_origLine < other->m_origLine)
    {
       return(-1);
    }
-   else if (A_token->orig_line == B_token->orig_line)
+   else if (m_origLine == other->m_origLine)
    {
-      if (A_token->orig_col < B_token->orig_col)
+      if (m_origCol < other->m_origCol)
       {
          return(-1);
       }
-      else if (A_token->orig_col == B_token->orig_col)
+      else if (m_origCol == other->m_origCol)
       {
          return(0);
       }
    }
    return(1);
-}
+} // Chunk::ComparePosition
+
+
+bool Chunk::IsOCForinOpenParen() const
+{
+   if (  language_is_set(lang_flag_e::LANG_OC)
+      && Is(E_Token::CT_SPAREN_OPEN)
+      && GetPrevNcNnl()->Is(E_Token::CT_FOR))
+   {
+      const Chunk *nxt = const_cast<Chunk *>(this);
+
+      while (  nxt->IsNotNullChunk()
+            && nxt->IsNot(E_Token::CT_SPAREN_CLOSE)
+            && nxt->IsNot(E_Token::CT_IN))
+      {
+         nxt = nxt->GetNextNcNnl();
+      }
+
+      if (nxt->Is(E_Token::CT_IN))
+      {
+         return(true);
+      }
+   }
+   return(false);
+} // Chunk::IsOCForinOpenParen
+
+
+bool Chunk::IsStringAndLevel(const char *str, const size_t len,
+                             bool caseSensitive, const int level) const
+{
+   return(  (  level < 0
+            || m_level == static_cast<size_t>(level))
+         && Len() == len                                    // the length is as expected
+         && (  (  caseSensitive
+               && strncmp(GetLogText(), str, len) == 0)
+            || (  !caseSensitive
+               && strncasecmp(GetLogText(), str, len) == 0)));   // the strings are equal
+} // Chunk::IsStringAndLevel
+
+
+Chunk *Chunk::GetClosingParen(E_Scope scope) const
+{
+   E_Token token = getMatchingToken(m_type, true);
+
+   if (token != E_Token::CT_NONE)
+   {
+      return(GetNextType(token, m_level, scope));
+   }
+   return(Chunk::NullChunkPtr);
+} // Chunk::GetClosingParen
+
+
+Chunk *Chunk::GetOpeningParen(E_Scope scope) const
+{
+   E_Token token = getMatchingToken(m_type, false);
+
+   if (token != E_Token::CT_NONE)
+   {
+      return(GetPrevType(token, m_level, scope));
+   }
+   return(Chunk::NullChunkPtr);
+} // Chunk::GetOpeningParen
+
+
+bool Chunk::IsCppInheritanceAccessSpecifier() const
+{
+   return(  language_is_set(lang_flag_e::LANG_CPP)
+         && (  Is(E_Token::CT_ACCESS)
+            || Is(E_Token::CT_QUALIFIER))
+         && (  IsString("private")
+            || IsString("protected")
+            || IsString("public")));
+} // Chunk::IsCppInheritanceAccessSpecifier
+
+
+bool Chunk::IsColon() const
+{
+   return(  Is(E_Token::CT_ACCESS_COLON)
+         || Is(E_Token::CT_ASM_COLON)
+         || Is(E_Token::CT_BIT_COLON)
+         || Is(E_Token::CT_CASE_COLON)
+         || Is(E_Token::CT_CLASS_COLON)
+         || Is(E_Token::CT_COLON)
+         || Is(E_Token::CT_COND_COLON)
+         || Is(E_Token::CT_CONSTR_COLON)
+         || Is(E_Token::CT_CS_SQ_COLON)
+         || Is(E_Token::CT_D_ARRAY_COLON)
+         || Is(E_Token::CT_ENUM_COLON)
+         || Is(E_Token::CT_FOR_COLON)
+         || Is(E_Token::CT_LABEL_COLON)
+         || Is(E_Token::CT_OC_COLON)
+         || Is(E_Token::CT_OC_DICT_COLON)
+         || Is(E_Token::CT_TAG_COLON)
+         || Is(E_Token::CT_WHERE_COLON));
+} // Chunk::IsColon
+
+
+bool Chunk::IsDoxygenComment() const
+{
+   if (!IsComment())
+   {
+      return(false);
+   }
+
+   if (Len() < 3)
+   {
+      return(false);
+   }
+   // check the third character
+   const char *sComment = GetLogText();
+   return(  (sComment[2] == '/')
+         || (sComment[2] == '!')
+         || (sComment[2] == '@'));
+} // Chunk::IsDoxygenComment
+
+
+bool Chunk::IsDoxygenAfterMemberComment() const
+{
+   if (!IsComment())
+   {
+      return(false);
+   }
+   return(  GetText().startswith("//!<")
+         || GetText().startswith("///<")
+         || GetText().startswith("/*!<")
+         || GetText().startswith("/**<"));
+} // Chunk::IsDoxygenAfterMemberComment
+
+
+bool Chunk::IsTypeDefinition() const
+{
+   return(  Is(E_Token::CT_TYPE)
+         || Is(E_Token::CT_PTR_TYPE)
+         || Is(E_Token::CT_BYREF)
+         || Is(E_Token::CT_DC_MEMBER)
+         || Is(E_Token::CT_QUALIFIER)
+         || Is(E_Token::CT_STRUCT)
+         || Is(E_Token::CT_ENUM)
+         || Is(E_Token::CT_UNION));
+} // Chunk::IsTypeDefinition
+
+
+bool Chunk::IsNewlineBetween(const Chunk *other) const
+{
+   const Chunk *pc = const_cast<Chunk *>(this);
+
+   while (pc != other)
+   {
+      if (pc->IsNewline())
+      {
+         return(true);
+      }
+      pc = pc->GetNext();
+   }
+   return(false);
+} // Chunk::IsNewlineBetween
+
+
+size_t Chunk::GetNlCountFiltered(LineSkipConfig &skip) const
+{
+   size_t nl_count = GetNlCount(); // Initial number of newlines in this chunk
+
+   // If no newlines in this chunk, nothing to filter.
+   if (nl_count == 0)
+   {
+      return(0);
+   }
+
+   // If no budget available, directly return the raw count.
+   if (skip.empty_lines == 0 && skip.pp_lines == 0 && skip.cmt_lines == 0)
+   {
+      return(nl_count);
+   }
+
+   // If we are on a newline chunk, we must count the number of empty lines and look forward
+   if (IsNewline())
+   {
+      // 1. Handle empty lines (if nl_count > 1, it means there's at least one empty line)
+      //    The 'nl_count - 1' represents the number of purely empty lines
+      if (nl_count > 1)
+      {
+         const size_t empty_lines_in_chunk = nl_count - 1;
+         const size_t consumed             = std::min(empty_lines_in_chunk, skip.empty_lines);
+         skip.empty_lines -= consumed;
+         nl_count         -= consumed; // Reduce the count that will be returned
+      }
+      // Check the next chunk to determine what type of line this last remaining newline precedes.
+      Chunk const *next = GetNext();
+
+      // 2. Handle preprocessor lines (the line *after* the newline chunk)
+      // We assume a newline precedes a single line type (PP, Comment, or regular code).
+      // When pp_excludes_define is set, #define lines are NOT counted as PP lines because
+      // they are the alignment target itself, not an intervening directive.
+      // In the token stream a #define line starts with CT_PREPROC (#) followed by
+      // CT_PP_DEFINE (define), so we look one token ahead to distinguish it from other
+      // PP lines (#ifdef, #endif, #pragma, …).
+      const bool is_define_line = skip.pp_excludes_define
+                                  && next->Is(E_Token::CT_PREPROC)
+                                  && next->GetNext()->Is(E_Token::CT_PP_DEFINE);
+      const bool is_pp_line = next->IsPreproc() && !is_define_line;
+
+      if (is_pp_line && skip.pp_lines > 0)
+      {
+         --skip.pp_lines;
+         --nl_count; // Consume this newline from the count
+         return(nl_count);
+      }
+
+      // 3. Handle comment lines (the line *after* the last newline chunk)
+      // This check is independent of IsPreproc(), as a line can be a comment after a PP or just a comment.
+      if (next->IsComment() && skip.cmt_lines > 0)
+      {
+         --skip.cmt_lines;
+         --nl_count; // Consume this newline from the count
+         return(nl_count);
+      }
+   }
+   else
+   {
+      // We are on a comment chunk, juste count the number of newlines into this comment chunk (if any).
+      assert(IsComment() && "The logic of this method is for a newline chunk or a comment chunk only.");
+
+      // nl_count is always positive (test at start of function)
+      const size_t cmt_lines_in_chunk = nl_count;
+      const size_t consumed           = std::min(cmt_lines_in_chunk, skip.cmt_lines);
+      skip.cmt_lines -= consumed;
+      nl_count       -= consumed; // Reduce the count that will be returned
+   }
+   return(nl_count); // Return the count of newlines that *could not* be ignored by any budget
+} // Chunk::GetNlCountFiltered

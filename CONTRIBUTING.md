@@ -67,6 +67,10 @@ There are lots of ways to contribute to Uncrustify:
       Changes without tests should explain why tests are not present.
       (Changes that are non-functional, such as documentation changes,
       can usually omit tests without justification.)
+    - Any updates to `src/options.h`, including option descriptions, should be
+      accompanied by an update of the option documentation. This can be done by
+      building uncrustify and then running:
+      `./scripts/release_tool.py optiondocs path_to_uncrustify_binary`
 
 * Prepare a Pull Request (PR):
     - To reduce the likelihood of conflicts and test failures,
@@ -81,7 +85,7 @@ There are lots of ways to contribute to Uncrustify:
       (a rephrasing of the branch name if set correctly).
     - The PR description should document the _why_ the change needed to be done
       and not _how_, which should be obvious by doing the code review.
-    - After commiting a new PR, one may have a look to the results:
+    - After committing a new PR, one may have a look to the results:
         https://coveralls.io/github/uncrustify/uncrustify
 
 

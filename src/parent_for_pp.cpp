@@ -8,45 +8,46 @@
 #include "parent_for_pp.h"
 
 #include "chunk.h"
+#include <vector>
 
 
-void do_parent_for_pp(void)
+void do_parent_for_pp()
 {
    LOG_FUNC_ENTRY();
 
-   vector<Chunk *> viz;
+   std::vector<Chunk *> viz;
 
-   Chunk           *pc = Chunk::GetHead()->GetNextNcNnl();
+   Chunk                *pc = Chunk::GetHead()->GetNextNcNnl();
 
    while (pc->IsNotNullChunk())
    {
-      // CT_PP_IF,            // #if, #ifdef, or #ifndef
-      // CT_PP_ELSE,          // #else or #elif
-      // CT_PP_ENDIF,         // #endif
-      if (chunk_is_token(pc, CT_PP_IF))
+      // E_Token::CT_PP_IF,            // #if, #ifdef, or #ifndef
+      // E_Token::CT_PP_ELSE,          // #else or #elif
+      // E_Token::CT_PP_ENDIF,         // #endif
+      if (pc->Is(E_Token::CT_PP_IF))
       {
-         LOG_FMT(LMCB, "%s(%d): IF: orig_line %zu, orig_col is %zu\n",
-                 __func__, __LINE__, pc->orig_line, pc->orig_col);
-         log_pcf_flags(LMCB, pc->flags);
+         LOG_FMT(LMCB, "%s(%d): IF: orig line %zu, orig col is %zu\n",
+                 __func__, __LINE__, pc->GetOrigLine(), pc->GetOrigCol());
+         log_pcf_flags(LMCB, pc->GetFlags());
          viz.push_back(pc);
       }
-      else if (chunk_is_token(pc, CT_PP_ELSE))
+      else if (pc->Is(E_Token::CT_PP_ELSE))
       {
-         LOG_FMT(LMCB, "%s(%d): ELSE: orig_line %zu, orig_col is %zu\n",
-                 __func__, __LINE__, pc->orig_line, pc->orig_col);
-         log_pcf_flags(LMCB, pc->flags);
-         size_t level = pc->pp_level;
+         LOG_FMT(LMCB, "%s(%d): ELSE: orig line %zu, orig col is %zu\n",
+                 __func__, __LINE__, pc->GetOrigLine(), pc->GetOrigCol());
+         log_pcf_flags(LMCB, pc->GetFlags());
+         size_t level = pc->GetPpLevel();
          Chunk  *a    = viz.at(level - 1);
-         chunk_set_parent(pc, a);
+         pc->SetParent(a);
       }
-      else if (chunk_is_token(pc, CT_PP_ENDIF))
+      else if (pc->Is(E_Token::CT_PP_ENDIF))
       {
-         LOG_FMT(LMCB, "%s(%d): ENDIF: orig_line %zu, orig_col is %zu\n",
-                 __func__, __LINE__, pc->orig_line, pc->orig_col);
-         log_pcf_flags(LMCB, pc->flags);
-         size_t level = pc->pp_level;
+         LOG_FMT(LMCB, "%s(%d): ENDIF: orig line %zu, orig col is %zu\n",
+                 __func__, __LINE__, pc->GetOrigLine(), pc->GetOrigCol());
+         log_pcf_flags(LMCB, pc->GetFlags());
+         size_t level = pc->GetPpLevel();
          Chunk  *a    = viz.at(level);
-         chunk_set_parent(pc, a);
+         pc->SetParent(a);
          viz.pop_back();
       }
       pc = pc->GetNextNcNnl();

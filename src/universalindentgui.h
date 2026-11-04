@@ -1,6 +1,6 @@
 /**
  * @file universalindentgui.h
- * prototypes for universalindentgui.c
+ * prototypes for universalindentgui.cpp
  *
  * @author  Ben Gardner
  * @license GPL v2+
@@ -9,6 +9,8 @@
 #define UNIVERSALINDENTGUI_H_INCLUDED
 
 #include "uncrustify_types.h"
+
+#include <cstdio>
 
 
 void print_universal_indent_cfg(FILE *pfile);

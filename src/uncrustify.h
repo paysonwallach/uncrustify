@@ -1,11 +1,10 @@
 /**
  * @file uncrustify.h
- * prototypes for uncrustify.c
+ * prototypes for uncrustify.cpp
  *
  * @author  Ben Gardner
  * @license GPL v2+
  */
-
 #ifndef UNCRUSTIFY_H_INCLUDED
 #define UNCRUSTIFY_H_INCLUDED
 
@@ -13,39 +12,21 @@
 
 #include <stdio.h>
 
-int load_header_files(void);
 
+void load_header_files();
 
-void uncrustify_file(const file_mem &fm, FILE *pfout, const char *parsed_file, const char *dump_filename, bool defer_uncrustify_end = false);
-
-
+void uncrustify_file(const MemoryFile &fm, FILE *pfout, const char *parsed_file, const char *dump_filename, bool is_quiet, bool defer_uncrustify_end = false);
 void uncrustify_end();
-
 
 const char *get_token_name(E_Token token);
 
 
 /**
- * Gets the tag text for a language
- *
- * @param lang  The LANG_xxx enum
- *
- * @return A string
- */
-const char *language_name_from_flags(size_t lang);
-
-
-/**
  * Grab the token id for the text.
  *
- * @return token, will be CT_NONE on failure to match
+ * @return token, will be E_Token::CT_NONE on failure to match
  */
 E_Token find_token_name(const char *text);
-
-std::string pcf_flags_str(pcf_flags_t flags);
-
-
-void log_pcf_flags(log_sev_t sev, pcf_flags_t flags);
 
 
 /**
@@ -80,20 +61,5 @@ void usage(const char *argv0);
 
 
 void usage_error(const char *msg = nullptr);
-
-
-/**
- * Set idx = 0 before the first call.
- * Done when returns nullptr
- */
-const char *get_file_extension(int &idx);
-
-
-//! Prints custom file extensions to the file
-void print_extensions(FILE *pfile);
-
-
-const char *extension_add(const char *ext_text, const char *lang_text);
-
 
 #endif /* UNCRUSTIFY_H_INCLUDED */

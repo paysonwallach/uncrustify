@@ -6,29 +6,20 @@
  * @author  Ben Gardner
  * @license GPL v2+
  */
-
 #ifndef WINDOWS_COMPAT_H_INCLUDED
 #define WINDOWS_COMPAT_H_INCLUDED
 
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+
+#ifdef WIN32
 #include "windows.h"
+#endif
 
 #define HAVE_SYS_STAT_H
 
 #define NO_MACRO_VARARG
-
-typedef char                 CHAR;
-
-typedef signed char          INT8;
-typedef short                INT16;
-typedef int                  INT32;
-
-typedef unsigned char        UINT8;
-typedef unsigned short       UINT16;
-typedef unsigned int         UINT32;
-typedef unsigned long long   UINT64;
 
 #ifndef PRIx64
 #define PRIx64    "llx"
@@ -63,8 +54,8 @@ typedef unsigned long long   UINT64;
 #endif // __GNUC__
 #endif // _MSC_VER
 
-#include "stdio.h"
-#include "string.h"
+#include <stdio.h>
+#include <string.h>
 
 #undef snprintf
 #define snprintf       _snprintf
@@ -85,9 +76,11 @@ typedef unsigned long long   UINT64;
 #define fileno         _fileno
 
 // includes for _setmode()
+#ifdef WIN32
 #include <direct.h>
-#include <fcntl.h>
 #include <io.h>
+#endif
+#include <fcntl.h>
 
 // on windows the file permissions have no meaning thus neglect them
 #define mkdir(x, y)    _mkdir(x)

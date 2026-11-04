@@ -14,3 +14,10 @@
 70300  vala/Issue_2090.cfg                  vala/Issue_2090.vala
 70301  vala/Issue_2270.cfg                  vala/Issue_2270.vala
 70302  common/sp_after_cast.cfg             vala/cast.vala
+70303  vala/nullable.cfg                    vala/nullable.vala
+70304  common/empty.cfg                     vala/identifier.vala
+70306  vala/ben_036.cfg                     vala/exception-filters.vala
+
+70310  vala/mda_space_a.cfg                 vala/mdarray_space.vala
+70311  vala/sp_after_comma-a.cfg            vala/mdarray_space.vala
+70312  vala/mda_space_c.cfg                 vala/mdarray_space.vala

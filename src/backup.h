@@ -21,6 +21,9 @@
 #ifndef BACKUP_H_INCLUDED
 #define BACKUP_H_INCLUDED
 
+#include "base_types.h"
+#include <vector>
+
 #define UNC_BACKUP_SUFFIX        ".unc-backup~"
 #define UNC_BACKUP_MD5_SUFFIX    ".unc-backup.md5~"
 
@@ -42,7 +45,7 @@
  * @retval EX_OK     successfully created backup file
  * @retval EX_IOERR  could not create backup file
  */
-int backup_copy_file(const char *filename, const std::vector<UINT8> &data);
+int backup_copy_file(const char *filename, const std::vector<uint8_t> &data);
 
 
 /**

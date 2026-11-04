@@ -3,24 +3,21 @@
  * Manages and navigates the list of chunks.
  *
  * @author  Ben Gardner
+ * @author  Guy Maurel
  * @license GPL v2+
  */
 
 #ifndef CHUNK_LIST_H_INCLUDED
 #define CHUNK_LIST_H_INCLUDED
 
+#include <cstdio>
+
 #include "uncrustify_types.h"
 // necessary to not sort it
 #include "char_table.h"
+#include "language_names.h"
 #include "language_tools.h"
-
-
-/*
- * TODO: better use a namespace for all chunk related operations.
- * The function "chunk_is_comment()" would for instance
- * become "chunk::is_comment()". This makes the usage of the chunks easier
- * and more intuitive.
- */
+#include "uncrustify.h"
 
 
 static constexpr int ANY_LEVEL = -1;
@@ -33,9 +30,9 @@ static constexpr int ANY_LEVEL = -1;
  *
  * PREPROC
  *  - If not in a preprocessor, skip over any encountered preprocessor stuff
- *  - If in a preprocessor, fail to leave (return nullptr)
+ *  - If in a preprocessor, fail to leave (return Chunk::NullChunkPtr)
  */
-enum class E_Scope : unsigned int
+enum class E_Scope : size_t
 {
    ALL,      //! search in all kind of chunks
    PREPROC,  //! search only in preprocessor chunks
@@ -45,33 +42,21 @@ enum class E_Scope : unsigned int
 /**
  * Specifies which direction or location an operation shall be performed.
  */
-enum class E_Direction : unsigned int
+enum class E_Direction : size_t
 {
    FORWARD,
    BACKWARD
 };
 
 
-/**
- * Temporary internal typedef. Will be progressively be replaced by Chunk::CheckFnPtr.
- *
- * @brief prototype for a function that checks a chunk to have a given type
- *
- * @note this typedef defines the function type "check_t"
- * for a function pointer of type
- * bool function(Chunk *pc)
- */
-// TODO remove when finished
-typedef bool (*check_t)(Chunk *pc);
-
+class ChunkListManager;
 
 // This is the main type of this program
 class Chunk
 {
-public:
-   static Chunk        NullChunk;                       // Null Chunk
-   static Chunk *const NullChunkPtr;                    // Pointer to the Null Chunk
+   friend ChunkListManager;
 
+public:
    //! constructors
    Chunk(bool null_c = false);                    // default
    Chunk(const Chunk &o);                         // !!! partial copy: chunk is not linked to others
@@ -79,20 +64,291 @@ public:
    Chunk &operator=(const Chunk &o);              // !!! partial copy: chunk is not linked to others
 
    //! whether this is a null Chunk or not
-   bool IsNullChunk() const { return(null_chunk); }
-   bool IsNotNullChunk() const { return(!null_chunk); }
+   bool IsNullChunk() const { return(m_nullChunk); }
+   bool IsNotNullChunk() const { return(!m_nullChunk); }
 
    //! sets all elements of the struct to their default value
    void Reset();
 
-   //! provides the number of characters of string
+
+   // --------- Access methods
+
+   /**
+    * @brief returns the type of the chunk
+    */
+   E_Token GetType() const;
+
+   /**
+    * @brief Sets the chunk type
+    * @param token the type to set
+    * @note: for E_Token::CT_NEWLINE and E_Token::CT_NL_CONT tokens, it also sets the chunk text
+    */
+   void SetType(const E_Token token);
+
+   /**
+    * @brief Returns the parent type of the chunk
+    */
+   E_Token GetParentType() const;
+
+   /**
+    * @brief Sets the type of the parent chunk
+    * @param token the type to set
+    */
+   void SetParentType(const E_Token token);
+
+   /**
+    * @brief Returns the parent of the chunk
+    */
+   Chunk *GetParent() const;
+
+   /**
+    * @brief Sets the parent of the chunk
+    * @param parent the parent chunk to set
+    */
+   void SetParent(Chunk *parent);
+
+   /**
+    * @brief Returns the alignment data of the chunk as a const reference
+    */
+   const AlignmentData &GetAlignData() const;
+
+   /**
+    * @brief Returns the alignment data of the chunk as a modifiable reference
+    */
+   AlignmentData &AlignData();
+
+   /**
+    * @brief Returns the indentation data of the chunk as a const reference
+    */
+   const IndentationData &GetIndentData() const;
+
+   /**
+    * @brief Returns the indentation data of the chunk as a modifiable reference
+    */
+   IndentationData &IndentData();
+
+   /**
+    * @brief Returns the text of the chunk as a const reference
+    */
+   const UncText &GetText() const;
+
+   /**
+    * @brief Returns the text of the chunk as a modifiable reference
+    */
+   UncText &Text();
+
+   /**
+    * @brief returns the number of characters in the chunk text string
+    */
    size_t Len() const;
 
-   //! provides the content of a string a zero terminated character pointer
-   const char *Text() const;
+   /**
+    * @brief returns the content of the chunk text as C string
+    */
+   const char *GetLogText() const;
 
-   // Issue #2984, fill up, if necessary, a copy of the first chars of the Text() string
+   /**
+    * Returns a filled up (if necessary) copy of the first chars of the text string
+    */
    const char *ElidedText(char *for_the_copy) const;
+
+   /**
+    * @brief Returns the tracking data of the chunk as a const reference
+    */
+   const TrackList_SP *GetTrackingData_SP() const;
+
+   /**
+    * @brief Returns the tracking data of the chunk as a modifiable reference
+    */
+   TrackList_SP * &TrackingData_SP();
+
+   /**
+    * @brief Returns the type of the parent chunk
+    */
+   E_Token GetTypeOfParent() const;
+
+   /**
+    * @brief Returns the chunk flags
+    */
+   PcfFlags GetFlags() const;
+
+   /**
+    * @brief Sets the chunk flags
+    * @param flags the new chunk flags
+    */
+   void SetFlags(PcfFlags flags);
+
+   /**
+    * @brief Tests if some chunk flags are set
+    * @param flags the flag bits to test
+    * @return true if the specified bits are set, false otherwise
+    */
+   bool TestFlags(PcfFlags flags) const;
+
+   /**
+    * @brief Resets some of the chunk flag bits
+    * @param resetBits the flag bits to reset
+    */
+   void ResetFlagBits(PcfFlags resetBits);
+
+   /**
+    * @brief Sets some of the chunk flag bits
+    * @param setBits the flag bits to set
+    */
+   void SetFlagBits(PcfFlags setBits);
+
+   /**
+    * @brief Sets and reset some of the chunk flag bits
+    * @param resetBits the flag bits to reset
+    * @param setBits the flag bits to set
+    */
+   void UpdateFlagBits(PcfFlags resetBits, PcfFlags setBits);
+
+   /**
+    * @brief Returns the line number of the chunk in the input file
+    */
+   size_t GetOrigLine() const;
+
+   /**
+    * @brief Sets the line number of the chunk in the input file
+    * @param line the line number of the chunk
+    */
+   void SetOrigLine(size_t line);
+
+   /**
+    * @brief Returns the column number of the chunk in the input file
+    */
+   size_t GetOrigCol() const;
+
+   /**
+    * @brief Sets the column number of the chunk in the input file
+    * @param col the column number of the chunk
+    */
+   void SetOrigCol(size_t col);
+
+   /**
+    * @brief Returns the end column number of the chunk in the input file
+    */
+   size_t GetOrigColEnd() const;
+
+   /**
+    * @brief Sets the end column number of the chunk in the input file
+    * @param col the end column number of the chunk
+    */
+   void SetOrigColEnd(size_t col);
+
+   /**
+    * @brief Returns the position of the whitespace before this chunk
+    */
+   size_t GetOrigPrevSp() const;
+
+   /**
+    * @brief Sets the position of the whitespace before this chunk
+    * @param col the end column number of the chunk in the input file
+    */
+   void SetOrigPrevSp(size_t col);
+
+   /**
+    * @brief Returns the column of the chunk
+    */
+   size_t GetColumn() const;
+
+   /**
+    * @brief Returns the end column of the chunk
+    */
+   size_t GetColumnEnd() const;
+
+   /**
+    * @brief Sets the column of the chunk
+    * @param col the column of the chunk
+    */
+   void SetColumn(size_t col);
+
+   /**
+    * @brief Returns the column indentation of the chunk
+    */
+   size_t GetColumnIndent() const;
+
+   /**
+    * @brief Sets the column indentation of the chunk
+    * @param col the column indentation of the chunk
+    */
+   void SetColumnIndent(size_t col);
+
+   /**
+    * @brief Returns the number of newlines in a E_Token::CT_NEWLINE chunk
+    */
+   size_t GetNlCount() const;
+
+   /**
+    * @brief Returns the effective number of newlines, excluding certain line types
+    * based on LineSkipConfig settings. This is used for span calculations in
+    * alignment operations.
+    * @param skip configuration with budgets that are decremented as lines are skipped
+    * @return effective newline count after applying skip rules
+    */
+   size_t GetNlCountFiltered(LineSkipConfig &skip) const;
+
+   /**
+    * @brief Sets the number of newlines in a E_Token::CT_NEWLINE chunk
+    * @param cnt the number of newlines
+    */
+   void SetNlCount(size_t cnt);
+
+   /**
+    * @brief Returns the column of the newline entries
+    */
+   size_t GetNlColumn() const;
+
+   /**
+    * @brief Sets the column of the newline entries
+    * @param col the number of the column
+    */
+   void SetNlColumn(size_t col);
+
+   /**
+    * @brief Returns the level of the chunk
+    */
+   size_t GetLevel() const;
+
+   /**
+    * @brief Sets the level of the chunk
+    * @param col the level of the chunk
+    */
+   void SetLevel(size_t level);
+
+   /**
+    * @brief Returns the brace level of the chunk
+    */
+   size_t GetBraceLevel() const;
+
+   /**
+    * @brief Sets the brace level of the chunk
+    * @param level the brace level of the chunk
+    */
+   void SetBraceLevel(size_t lvl);
+
+   /**
+    * @brief Returns the preprocessor level of the chunk
+    */
+   size_t GetPpLevel() const;
+
+   /**
+    * @brief Sets the preprocessor level of the chunk
+    * @param level the preprocessor level of the chunk
+    */
+   void SetPpLevel(size_t lvl);
+
+   /**
+    * @brief Returns the after tab property of the chunk
+    */
+   bool GetAfterTab() const;
+
+   /**
+    * @brief Sets the after tab property of the chunk
+    * @param afterTab the after tab property of the chunk
+    */
+   void SetAfterTab(bool afterTab);
 
 
    // --------- Get* chunk functions
@@ -101,13 +357,13 @@ public:
     * @brief returns the head of the chunk list
     * @return pointer to the first chunk
     */
-   static Chunk *GetHead(void);
+   static Chunk *GetHead();
 
    /**
     * @brief returns the tail of the chunk list
     * @return pointer to the last chunk
     */
-   static Chunk *GetTail(void);
+   static Chunk *GetTail();
 
    /**
     * @brief returns the next chunk in a list of chunks
@@ -230,7 +486,6 @@ public:
     */
    Chunk *GetPrevNcNnlNet(const E_Scope scope = E_Scope::ALL) const;
 
-
    /**
     * @brief returns the prev non-comment, non-newline, non-ignored chunk
     * @param scope code region to search in
@@ -238,16 +493,14 @@ public:
     */
    Chunk *GetPrevNcNnlNi(const E_Scope scope = E_Scope::ALL) const;
 
-
    /**
     * @brief returns the next chunk not in or part of balanced square
     *        brackets. This handles stacked [] instances to accommodate
     *        multi-dimensional array declarations
     * @param scope  code region to search in
-    * @return nullptr or the next chunk not in or part of square brackets
+    * @return Chunk::NullChunkPtr or the next chunk not in or part of square brackets
     */
    Chunk *GetNextNisq(const E_Scope scope = E_Scope::ALL) const;
-
 
    /**
     * @brief returns the next non-virtual brace chunk
@@ -256,7 +509,6 @@ public:
     */
    Chunk *GetNextNvb(const E_Scope scope = E_Scope::ALL) const;
 
-
    /**
     * @brief returns the prev non-virtual brace chunk
     * @param scope code region to search in
@@ -264,47 +516,76 @@ public:
     */
    Chunk *GetPrevNvb(const E_Scope scope = E_Scope::ALL) const;
 
-
    /**
     * @brief returns the next chunk of the given type at the level.
-    * @param cType  the type to look for
-    * @param cLevel the level to match, -1 or ANY_LEVEL (any level)
-    * @param scope  code region to search in
+    * @param type    the type to look for
+    * @param level  the level to match or ANY_LEVEL
+    * @param scope   code region to search in
     * @return pointer to the next matching chunk or Chunk::NullChunkPtr if no chunk was found
     */
-   Chunk *GetNextType(const E_Token cType, const int cLevel, const E_Scope scope = E_Scope::ALL) const;
-
+   Chunk *GetNextType(const E_Token type, const int level = ANY_LEVEL, const E_Scope scope = E_Scope::ALL) const;
 
    /**
     * @brief returns the prev chunk of the given type at the level.
-    * @param cType  the type to look for
-    * @param cLevel the level to match, -1 or ANY_LEVEL (any level)
-    * @param scope  code region to search in
+    * @param type    the type to look for
+    * @param level  the level to match or ANY_LEVEL
+    * @param scope   code region to search in
     * @return pointer to the prev matching chunk or Chunk::NullChunkPtr if no chunk was found
     */
-   Chunk *GetPrevType(const E_Token type, int level, E_Scope scope = E_Scope::ALL) const;
-
+   Chunk *GetPrevType(const E_Token type, int level = ANY_LEVEL, E_Scope scope = E_Scope::ALL) const;
 
    /**
     * @brief returns the next chunk that holds a given string at a given level.
-    * @param cStr   string to search for
+    * @param str    string to search for
     * @param len    length of string
-    * @param cLevel -1 or ANY_LEVEL (any level) or the level to match
+    * @param level  the level to match or ANY_LEVEL
     * @param scope  code region to search in
     * @return pointer to the next matching chunk or Chunk::NullChunkPtr if no chunk was found
     */
-   Chunk *GetNextString(const char *cStr, const size_t len, const int cLevel, const E_Scope scope = E_Scope::ALL) const;
-
+   Chunk *GetNextString(const char *str, const size_t len, const int level, const E_Scope scope = E_Scope::ALL) const;
 
    /**
     * @brief returns the prev chunk that holds a given string at a given level.
-    * @param cStr   string to search for
+    * @param str    string to search for
     * @param len    length of string
-    * @param cLevel -1 or ANY_LEVEL (any level) or the level to match
+    * @param level  the level to match or ANY_LEVEL
     * @param scope  code region to search in
     * @return pointer to the prev matching chunk or Chunk::NullChunkPtr if no chunk was found
     */
-   Chunk *GetPrevString(const char *cStr, const size_t len, const int cLevel, const E_Scope scope = E_Scope::ALL) const;
+   Chunk *GetPrevString(const char *str, const size_t len, const int level, const E_Scope scope = E_Scope::ALL) const;
+
+   /**
+    * @brief returns the next chunk that is not part of balanced square brackets.
+    * This handles stacked[] instances to accommodate multidimensional arrays.
+    * @return pointer to the next matching chunk or Chunk::NullChunkPtr if no chunk was found
+    */
+   Chunk *GetNextNbsb() const;
+
+   /**
+    * @brief returns the prev chunk that is not part of balanced square brackets.
+    * This handles stacked[] instances to accommodate multidimensional arrays.
+    * @return pointer to the prev matching chunk or Chunk::NullChunkPtr if no chunk was found
+    */
+   Chunk *GetPrevNbsb() const;
+
+   /**
+    * @brief returns the corresponding start chunk if the given chunk is within a
+    * preprocessor directive, or Chunk::NullChunkPtr otherwise.
+    * @return start chunk of the preprocessor directive or Chunk::NullChunkPtr if no chunk was found
+    */
+   Chunk *GetPpStart() const;
+
+   /**
+    * @brief Finds the first chunk on the line the current chunk is on.
+    * This just backs up until a newline or null chuck is hit.
+    *
+    * given: [ a - b - c - n1 - d - e - n2 ]
+    * input: [ a | b | c | n1 ] => a
+    * input: [ d | e | n2 ]     => d
+    *
+    * @return pointer to the first chunk on the line the current chunk is on.
+    */
+   Chunk *GetFirstChunkOnLine() const;
 
 
    // --------- Search functions
@@ -319,7 +600,7 @@ public:
    /**
     * @brief defines a member function pointer for a function of type
     * bool Chunk::function() const;
-    * that checks whether a chunk satisty a specific condition
+    * that checks whether a chunk satisfy a specific condition
     */
    typedef bool (Chunk::*T_CheckFnPtr)() const;
 
@@ -344,7 +625,6 @@ public:
     * @param  scope    code parts to consider for search
     * @param  dir      search direction (forward or backward)
     * @param  cond     success condition
-    *
     * @return pointer to the found chunk or Chunk::NullChunkPtr if no chunk was found
     */
    Chunk *Search(const T_CheckFnPtr checkFn, const E_Scope scope = E_Scope::ALL, const E_Direction dir = E_Direction::FORWARD, const bool cond = true) const;
@@ -361,26 +641,23 @@ public:
     *
     * @param  checkFn  compare function
     * @param  cond     success condition
-    *
     * @return pointer to the found chunk or Chunk::NullChunkPtr if no chunk was found
     */
    Chunk *SearchPpa(const T_CheckFnPtr checkFn, const bool cond = true) const;
 
    /**
     * @brief search a chunk of a given type and level. Traverses a chunk list in the
-    * specified direction until a chunk of a given type is found.
+    * specified direction until a chunk of a given type and level is found.
     *
     * This function is a specialization of Chunk::Search.
     *
-    * @param cType  category to search for
+    * @param type   category to search for
     * @param scope  code parts to consider for search
     * @param dir    search direction
-    * @param cLevel nesting level to match or -1 / ANY_LEVEL
-    *
+    * @param level nesting level to match or ANY_LEVEL
     * @return pointer to the found chunk or Chunk::NullChunkPtr if no chunk was found
     */
-   Chunk *SearchTypeLevel(const E_Token cType, const E_Scope scope = E_Scope::ALL, const E_Direction dir = E_Direction::FORWARD, const int cLevel = -1) const;
-
+   Chunk *SearchTypeLevel(const E_Token type, const E_Scope scope = E_Scope::ALL, const E_Direction dir = E_Direction::FORWARD, const int level = ANY_LEVEL) const;
 
    /**
     * @brief searches a chunk that holds a specific string
@@ -389,15 +666,28 @@ public:
     * with the provided string was found. Additionally a nesting level can be
     * provided to narrow down the search.
     *
-    * @param  cStr   string that searched chunk needs to have
+    * @param  str    string that searched chunk needs to have
     * @param  len    length of the string
-    * @param  cLevel nesting level of the searched chunk, ignored when negative
+    * @param  level  nesting level of the searched chunk, ignored when negative
     * @param  scope  code parts to consider for search
     * @param  dir    search direction
-    *
     * @return pointer to the found chunk or Chunk::NullChunkPtr if no chunk was found
     */
-   Chunk *SearchStringLevel(const char *cStr, const size_t len, const int cLevel, const E_Scope scope = E_Scope::ALL, const E_Direction dir = E_Direction::FORWARD) const;
+   Chunk *SearchStringLevel(const char *str, const size_t len, const int level, const E_Scope scope = E_Scope::ALL, const E_Direction dir = E_Direction::FORWARD) const;
+
+   /**
+    * @brief returns the closing match for the current paren/brace/square.
+    * @param scope chunk section to consider
+    * @return pointer to the next matching chunk or Chunk::NullChunkPtr if no chunk was found
+    */
+   Chunk *GetClosingParen(E_Scope scope = E_Scope::ALL) const;
+
+   /**
+    * @brief returns the opening match for the current paren/brace/square.
+    * @param scope chunk section to consider
+    * @return pointer to the prev matching chunk or Chunk::NullChunkPtr if no chunk was found
+    */
+   Chunk *GetOpeningParen(E_Scope scope = E_Scope::ALL) const;
 
 
    // --------- Is* functions
@@ -408,6 +698,14 @@ public:
     * @return true if the chunk type matches the specified token, false otherwise
     */
    bool Is(E_Token token) const;
+
+   /**
+    * @brief checks whether the chunk token name is a specific string
+    * @param str string to compare token name with
+    * @param caseSensitive whether to do a case sensitive or insensitive comparison
+    * @return true if the chunk token name matches the specified string, false otherwise
+    */
+   bool IsString(const char *str, bool caseSensitive = true) const;
 
    /**
     * @brief checks whether the chunk is not a specific token
@@ -445,6 +743,12 @@ public:
    bool IsPreproc() const;
 
    /**
+    * @brief checks whether the other chunk has the same preproc flags
+    * @return true if the other chunk has the same preproc flags
+    */
+   bool IsSamePreproc(const Chunk *other) const;
+
+   /**
     * @brief checks whether the chunk is either a comment or a newline
     * @return true if the chunk is either a comment or a newline, false otherwise
     */
@@ -475,6 +779,24 @@ public:
    bool IsCommentNewlineOrEmptyText() const;
 
    /**
+    * @brief checks whether the chunk is a single line comment
+    * @return true if the chunk is a single line comment
+    */
+   bool IsSingleLineComment() const;
+
+   /**
+    * @brief checks whether the chunk is a Doxygen comment
+    * @return true if the chunk is a Doxygen comment
+    */
+   bool IsDoxygenComment() const;
+
+   /**
+    * @brief checks whether the chunk is a Doxygen 'after member' comment
+    * @return true if the chunk is a Doxygen 'after member' comment
+    */
+   bool IsDoxygenAfterMemberComment() const;
+
+   /**
     * @brief checks whether the chunk is a square bracket
     * @return true if the chunk is a square bracket
     */
@@ -492,18 +814,17 @@ public:
     * @param level nesting level to match
     * @return true if the chunk matches a given type and level
     */
-   bool IsTypeAndLevel(const E_Token cType, const int cLevel) const;
-
+   bool IsTypeAndLevel(const E_Token type, const int level) const;
 
    /**
     * @brief checks whether the chunk matches a given string and level
-    * @param cStr   the expected string
+    * @param str    the expected string
     * @param len    length of the string
-    * @param cLevel nesting level of the searched chunk, ignored when negative
+    * @param caseSensitive whether to do a case sensitive or insensitive comparison
+    * @param level nesting level of the searched chunk, ignored when negative
     * @return true if the chunk matches a given string and level
     */
-   bool IsStringAndLevel(const char *cStr, const size_t len, const int cLevel) const;
-
+   bool IsStringAndLevel(const char *str, const size_t len, bool caseSensitive, const int level) const;
 
    /**
     * @brief checks whether the chunk is a star/asterisk
@@ -511,220 +832,876 @@ public:
     */
    bool IsStar() const;
 
+   /**
+    * @brief checks whether the chunk is a colon
+    * @return true if the chunk is a colon
+    */
+   bool IsColon() const;
+
+   /**
+    * @brief checks whether the chunk is a semicolon
+    * @return true if the chunk is a semicolon
+    */
+   bool IsSemicolon() const;
+
+   /**
+    * @brief checks whether the chunk is a pointer operator
+    * @return true if the chunk is a pointer operator
+    */
+   bool IsPointerOperator() const;
+
+   /**
+    * @brief checks whether the chunk is a pointer or a reference
+    * @return true if the chunk is a pointer or a reference
+    */
+   bool IsPointerOrReference() const;
+
+   /**
+    * @brief checks whether the chunk is an inheritance access specifier
+    * @return true if the chunk is an inheritance access specifier
+    */
+   bool IsCppInheritanceAccessSpecifier() const;
+
+   /**
+    * @brief checks whether the chunk is a pointer, reference or a qualifier
+    * @return true if the chunk is a pointer, reference or a qualifier
+    */
+   bool IsPointerReferenceOrQualifier() const;
+
+   /**
+    * @brief checks whether the chunk is an address
+    * @return true if the chunk is an address
+    */
+   bool IsAddress() const;
+
+   /**
+    * @brief checks whether the chunk is a MS reference
+    * @return true if the chunk is a MS reference
+    * NOTE: MS compilers for C++/CLI and WinRT use '^' instead of '*'
+    * for marking up reference types vs pointer types
+    */
+   bool IsMsRef() const;
+
+   /**
+    * @brief checks whether the chunk is nullable
+    * @return true if the chunk is nullable
+    */
+   bool IsNullable() const;
+
+   /**
+    * @brief Checks if a given chunk is the last on its line
+    * @return true or false depending on whether a given chunk is the last on its line
+    */
+   bool IsLastChunkOnLine() const;
+
+   /**
+    * @brief checks whether the current chunk is on same line of the given 'end' chunk.
+    * The current chunk must be before the 'end' chunk
+    * @param end the end chunk
+    * @return true if there is no newline between the current chunk and end chunk
+    */
+   bool IsOnSameLine(const Chunk *end) const;
+
+   /**
+    * @brief checks whether the chunk is an opening brace
+    * @return true if the chunk is an opening brace
+    */
+   bool IsBraceOpen() const;
+
+   /**
+    * @brief checks whether the chunk is a closing brace
+    * @return true if the chunk is a closing brace
+    */
+   bool IsBraceClose() const;
+
+   /**
+    * @brief checks whether the chunk is an opening parenthesis
+    * @return true if the chunk is an opening parenthesis
+    */
+   bool IsParenOpen() const;
+
+   /**
+    * @brief checks whether the chunk is a closing parenthesis
+    * @return true if the chunk is a closing parenthesis
+    */
+   bool IsParenClose() const;
+
+   /**
+    * @brief checks if a chunk points to the opening parentheses of a
+    * for (...in...) loop in Objective-C.
+    * @return true  if the chunk is the opening parentheses of a for-in loop
+    */
+   bool IsOCForinOpenParen() const;
+
+   /**
+    * @brief checks whether the chunk is a type defining token
+    * @return true if the chunk is a type defining token
+    */
+   bool IsTypeDefinition() const;
+
+   /**
+    * @brief checks whether the chunk is a word
+    * @return true if the chunk is a word
+    */
+   bool IsWord() const;
+
+   /**
+    * @brief checks whether the chunk is an enum or an enum class
+    * @return true if the chunk is an enum or an enum class
+    */
+   bool IsEnum() const;
+
+   /**
+    * @brief checks whether the chunk is a class or a struct
+    * @return true if the chunk is a class or a struct
+    */
+   bool IsClassOrStruct() const;
+
+   /**
+    * @brief checks whether the chunk is a class, struct or union
+    * @return true if the chunk is a class, struct or union
+    */
+   bool IsClassStructOrUnion() const;
+
+   /**
+    * @brief checks whether the chunk is a class, enum, struct or union
+    * @return true if the chunk is a class, enum, struct or union
+    */
+   bool IsClassEnumStructOrUnion() const;
+
+   /**
+    * @brief checks whether there is a newline between this chunk and the other
+    * @return true if there is a newline between this chunk and the other
+    */
+   bool IsNewlineBetween(const Chunk *other) const;
+
+
+   // --------- Util functions
+
+   /**
+    * @brief delete the chunk from the chunk list
+    * @param pc the chunk to remove from the list
+    */
+   static void Delete(Chunk * &pc);
+
+   /**
+    * @brief add a copy of this chunk after the given position in a chunk list.
+    * @note If pos is NullChunk, add at the tail of the chunk list
+    * @param pos insert position in list
+    * @return pointer to the newly added chunk
+    */
+   Chunk *CopyAndAddAfter(Chunk *pos) const;
+
+   /**
+    * @brief add a copy of this chunk before the given position in a chunk list.
+    * @note If pos is NullChunk, add at the head of the chunk list
+    * @param pos insert position in list
+    * @return pointer to the newly added chunk
+    */
+   Chunk *CopyAndAddBefore(Chunk *pos) const;
+
+   /**
+    * @brief move the chunk after the reference position in the chunk list
+    * @param ref chunk after which to move the current chunk
+    */
+   void MoveAfter(Chunk *ref);
+
+   /**
+    * @brief swaps the place of this chunk with the given one
+    * @param other the other chunk
+    */
+   void Swap(Chunk *other);
+
+   /**
+    * @brief swaps the two lines that are started by the current chunk and the other chunk
+    * @param other the other chunk
+    */
+   void SwapLines(Chunk const *other);
+
+   //!
+   /**
+    * @brief skips to the final word/type in a :: chain
+    * @return pointer to the chunk after the final word/type in a :: chain
+    */
+   Chunk *SkipDcMember() const;
+
+   /**
+    * @brief compare the positions of the chunk with another one
+    * @param other the other chunk
+    * @return returns -1 if this chunk comes first, +1 if it comes after, or 0.
+    */
+   int ComparePosition(const Chunk *other) const;
+
+   /**
+    * Returns true if it is safe to delete the newline token.
+    * The prev and next chunks must have the same PCF_IN_PREPROC flag AND
+    * the newline can't be after a C++ comment.
+    */
+   bool SafeToDeleteNl() const;
+
+
+protected:
+   // --------- Protected util functions
+
+   /**
+    * @brief copy the values from another chunk.
+    * @NOTE: this is a partial copy only: the chunk is not linked to others
+    * @param o the chunk to copy from
+    */
+   void CopyFrom(const Chunk &o);
+
+   /**
+    * @brief add a copy of this chunk before/after the given position in a chunk list.
+    * @note If pos is NullChunk, add the new chuck either at the head or tail of the
+    * list based on the specified direction.
+    * @param pos insert position in list
+    * @param dir insert before or after the given position chunk
+    * @return pointer to the newly added chunk
+    */
+   Chunk *CopyAndAdd(Chunk *pos, const E_Direction dir = E_Direction::FORWARD) const;
+
+   /**
+    * @brief set and/or clear the chunk flags
+    * @param setBits the flag bits to set
+    * @param resetBits the flag bits to reset
+    */
+   void SetResetFlags(PcfFlags resetBits, PcfFlags setBits);
+
 
    // --------- Data members
+   E_Token m_type;                          //! type of the chunk itself
+   E_Token m_parentType;                    //! type of the parent chunk usually E_Token::CT_NONE
+   size_t  m_origLine;                      //! line number of chunk in input file
+   size_t  m_origCol;                       //! column where chunk started in the input file, is always > 0
+   size_t  m_origColEnd;                    //! column where chunk ended in the input file, is always > 1
+   size_t  m_origPrevSp;                    //! whitespace before this token
+   size_t  m_column;                        //! column of the chunk
+   size_t  m_columnIndent;                  //! if 1st chunk on a line, set to the 'indent' column, which may
+                                            //! be less than the real column used to indent with tabs
+   size_t  m_nlCount;                       //! number of newlines in E_Token::CT_NEWLINE
+                                            //! the member is only usable by a token with a type E_Token::CT_NEWLINE
+                                            //! or E_Token::CT_WHITESPACE
+   size_t          m_nlColumn;              //! column of the subsequent newline entries(all of them should have the same column)
+   size_t          m_level;                 //! nest level in {, (, or [. Only to help vim command }
+   size_t          m_braceLevel;            //! nest level in braces only
+   size_t          m_ppLevel;               //! nest level in preprocessor
+   bool            m_afterTab;              //! whether this token was after a tab
 
-   Chunk        *next;                       //! pointer to next chunk in list
-   Chunk        *prev;                       //! pointer to previous chunk in list
-   Chunk        *parent;                     //! pointer to parent chunk(not always set)
+   PcfFlags        m_flags;                 //! see PCF_xxx
+   AlignmentData   m_alignmentData;         //! alignment data of the chunk
+   IndentationData m_indentationData;       //! indentation data of the chunk
 
-   align_ptr_t  align;
-   indent_ptr_t indent;
-   E_Token      type;                        //! type of the chunk itself
-   E_Token      parent_type;                 //! type of the parent chunk usually CT_NONE
-   //! might be different from parent->parent_type (above)
-   size_t       orig_line;                   //! line number of chunk in input file
-   size_t       orig_col;                    //! column where chunk started in the input file, is always > 0
-   size_t       orig_col_end;                //! column where chunk ended in the input file, is always > 1
-   UINT32       orig_prev_sp;                //! whitespace before this token
-   pcf_flags_t  flags;                       //! see PCF_xxx
-   size_t       column;                      //! column of chunk
-   size_t       column_indent;               /** if 1st on a line, set to the 'indent'
-                                              * column, which may be less than the real
-                                              * column used to indent with tabs          */
-   size_t   nl_count;                        //! number of newlines in CT_NEWLINE
-   size_t   nl_column;                       //! column of the subsequent newline entries(all of them should have the same column)
-   size_t   level;                           /** nest level in {, (, or [
-                                              * only to help vim command } */
-   size_t   brace_level;                     //! nest level in braces only
-   size_t   pp_level;                        //! nest level in preprocessor
-   bool     after_tab;                       //! whether this token was after a tab
-   unc_text str;                             //! the token text
+   Chunk           *m_next;                 //! pointer to next chunk in list
+   Chunk           *m_prev;                 //! pointer to previous chunk in list
+   Chunk           *m_parent;               //! pointer to parent chunk (not always set)
 
-   // for debugging purpose only
-   track_list *tracking;
+   UncText         m_text;                  //! the token text
+   TrackList_SP    *m_trackingList_SP;      //! for debugging purpose only, for Space option(s)
+
 
 private:
-   void copyFrom(const Chunk &o);              // !!! partial copy: chunk is not linked to others
+   const bool m_nullChunk;                    //! true for null chunks
 
-   const bool null_chunk;                      //! true for null chunks
+
+public:
+   static Chunk        NullChunk;             //! Null Chunk
+   static Chunk *const NullChunkPtr;          //! Pointer to the Null Chunk
 };
 
 
-/**
- * @brief Add a copy of a chunk to a chunk list after the given position.
- *
- * @note If ref is nullptr, add at the tail of the chunk list
- *
- * @todo is ref=nullptr really useful ?
- *
- * @param pc_in  pointer to chunk to add to list
- * @param ref    position where insertion takes place
- *
- * @return pointer to the added chunk
- */
-Chunk *chunk_add_after(const Chunk *pc_in, Chunk *ref);
-
-
-/**
- * @brief Add a copy of a chunk to a chunk list before the given position
- *
- * @note If ref is nullptr, add at the head of the chunk list
- *
- * @todo is ref=nullptr really useful ?
- *
- * \bug code adds it before the tail, either code or comment is wrong
- *
- * @param pc_in  pointer to chunk to add to list
- * @param ref    position where insertion takes place
- *
- * @retval pointer to the added chunk
- */
-Chunk *chunk_add_before(const Chunk *pc_in, Chunk *ref);
-
-
-/**
- * delete a chunk from a chunk list
- *
- * @param pc  chunk to delete
- */
-void chunk_del(Chunk * &pc);
-
-
-/**
- * move a chunk to after the reference position in a chunk list
- *
- * @param pc_in  chunk to move
- * @param ref    chunk after which to move
- */
-void chunk_move_after(Chunk *pc_in, Chunk *ref);
-
-
-/**
- * Swaps two chunks
- *
- * @param pc1  The first chunk
- * @param pc2  The second chunk
- */
-void chunk_swap(Chunk *pc1, Chunk *pc2);
-
-
-/**
- * Swaps two lines that are started with the specified chunks.
- *
- * @param pc1  The first chunk of line 1
- * @param pc2  The first chunk of line 2
- */
-void chunk_swap_lines(Chunk *pc1, Chunk *pc2);
-
-
-/**
- * Finds the first chunk on the line that pc is on.
- * This just backs up until a newline or nullptr is hit.
- *
- * given: [ a - b - c - n1 - d - e - n2 ]
- * input: [ a | b | c | n1 ] => a
- * input: [ d | e | n2 ]     => d
- *
- * @param pc  chunk to start with
- */
-Chunk *chunk_first_on_line(Chunk *pc);
-
-
-//! check if a given chunk is the last on its line
-bool chunk_is_last_on_line(Chunk *pc);
-
-
-/**
- * Gets the next chunk not in or part of balanced square
- * brackets.This handles stacked[] instances to accommodate
- * multi - dimensional array declarations
- *
- * @param  cur    chunk to use as start point
- *
- * @return nullptr or the next chunk not in or part of square brackets
- */
-Chunk *chunk_get_next_ssq(Chunk *cur);
-
-/**
- * Gets the prev chunk not in or part of balanced square
- * brackets.This handles stacked[] instances to accommodate
- * multi - dimensional array declarations
- *
- * @param  cur    chunk to use as start point
- *
- * @return nullptr or the prev chunk not in or part of square brackets
- */
-Chunk *chunk_get_prev_ssq(Chunk *cur);
-
-
-/**
- * Gets the corresponding start chunk if the given chunk is within a
- * preprocessor directive, or nullptr otherwise.
- *
- * @param  cur    chunk to use as start point
- *
- * @return nullptr or start chunk of the preprocessor directive
- */
-Chunk *chunk_get_pp_start(Chunk *cur);
-
-
-/**
- * @brief reverse search a chunk of a given category in a chunk list
- *
- * @param  pc   chunk list to search in
- * @param  cat  category to search for
- *
- * @retval nullptr  no object found, or invalid parameters provided
- * @retval Chunk  pointer to the found object
- */
-Chunk *chunk_search_prev_cat(Chunk *pc, const E_Token cat);
-
-
-/**
- * @brief forward search a chunk of a given category in a chunk list
- *
- * @param  pc   chunk list to search in
- * @param  cat  category to search for
- *
- * @retval nullptr  no object found, or invalid parameters provided
- * @retval Chunk  pointer to the found object
- */
-Chunk *chunk_search_next_cat(Chunk *pc, const E_Token cat);
-
-
-/**
- * @brief checks wether two chunks are in same line
- *
- * @param  start
- * @param  end
- *
- * @return true if there is no newline between start and end chunks
- */
-bool are_chunks_in_same_line(Chunk *start, Chunk *end);
-
-
-inline bool Chunk::IsTypeAndLevel(const E_Token cType, const int cLevel) const
+inline Chunk::Chunk(bool null_c)
+   : m_nullChunk(null_c)
 {
-   return(  (  cLevel < 0
-            || level == static_cast<size_t>(cLevel))
-         && type == cType);
+   Reset();
 }
 
 
-inline bool Chunk::IsStringAndLevel(const char *cStr, const size_t len, const int cLevel) const
+inline Chunk::Chunk(const Chunk &o)
+   : m_nullChunk(o.m_nullChunk)
 {
-   return(  (  cLevel < 0
-            || level == static_cast<size_t>(cLevel))
-         && Len() == len                       // the length is as expected
-         && memcmp(cStr, Text(), len) == 0);   // the strings are equal
+   CopyFrom(o);
+}
+
+
+inline Chunk &Chunk::operator=(const Chunk &o)
+{
+   if (this != &o)
+   {
+      CopyFrom(o);
+   }
+   return(*this);
+}
+
+
+inline size_t Chunk::Len() const
+{
+   return(m_text.size());
+}
+
+
+inline const char *Chunk::GetLogText() const
+{
+   return(m_text.GetLogText());
+}
+
+
+inline Chunk *Chunk::GetParent() const
+{
+   return(m_parent);
+}
+
+
+inline void Chunk::SetParent(Chunk *parent)
+{
+   if (this != parent)
+   {
+      m_parent = parent;
+   }
+}
+
+
+inline const AlignmentData &Chunk::GetAlignData() const
+{
+   return(m_alignmentData);
+}
+
+
+inline AlignmentData &Chunk::AlignData()
+{
+   return(m_alignmentData);
+}
+
+
+inline const IndentationData &Chunk::GetIndentData() const
+{
+   return(m_indentationData);
+}
+
+
+inline IndentationData &Chunk::IndentData()
+{
+   return(m_indentationData);
+}
+
+
+inline const UncText &Chunk::GetText() const
+{
+   return(m_text);
+}
+
+
+inline UncText &Chunk::Text()
+{
+   return(m_text);
+}
+
+
+inline const TrackList_SP *Chunk::GetTrackingData_SP() const
+{
+   return(m_trackingList_SP);
+}
+
+
+inline TrackList_SP * &Chunk::TrackingData_SP()
+{
+   return(m_trackingList_SP);
+}
+
+
+inline E_Token Chunk::GetType() const
+{
+   return(m_type);
+}
+
+
+inline E_Token Chunk::GetParentType() const
+{
+   return(m_parentType);
+}
+
+
+inline E_Token Chunk::GetTypeOfParent() const
+{
+   if (GetParent()->IsNullChunk())
+   {
+      return(E_Token::CT_PARENT_NOT_SET);
+   }
+   return(GetParent()->GetType());
+}
+
+
+inline PcfFlags Chunk::GetFlags() const
+{
+   return(m_flags);
+}
+
+
+inline void Chunk::SetFlags(PcfFlags flags)
+{
+   m_flags = flags;
+}
+
+
+inline bool Chunk::TestFlags(PcfFlags flags) const
+{
+   return(m_flags.test(flags));
+}
+
+
+inline void Chunk::ResetFlagBits(PcfFlags resetBits)
+{
+   SetResetFlags(resetBits, PCF_NONE);
+}
+
+
+inline void Chunk::SetFlagBits(PcfFlags setBits)
+{
+   SetResetFlags(PCF_NONE, setBits);
+}
+
+
+inline void Chunk::UpdateFlagBits(PcfFlags resetBits, PcfFlags setBits)
+{
+   SetResetFlags(resetBits, setBits);
+}
+
+
+inline size_t Chunk::GetOrigLine() const
+{
+   return(m_origLine);
+}
+
+
+inline void Chunk::SetOrigLine(size_t line)
+{
+#ifdef DEBUG
+   if (line == 0)
+   {
+      fprintf(stderr, "%s(%d): the input is %zu\n", __func__, __LINE__, line);
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+
+   if (line > uncrustify::limits::TOO_BIG_VALUE)
+   {
+      fprintf(stderr, "%s(%d): the input parameter is too big %zu\n",
+              __func__, __LINE__, line);
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+#endif
+   m_origLine = line;
+}
+
+
+inline size_t Chunk::GetOrigCol() const
+{
+   return(m_origCol);
+}
+
+
+inline void Chunk::SetOrigCol(size_t col)
+{
+#ifdef DEBUG
+   if (col > uncrustify::limits::TOO_BIG_VALUE)
+   {
+      fprintf(stderr, "%s(%d): the input parameter is too big %zu\n",
+              __func__, __LINE__, col);
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+#endif
+   m_origCol = col;
+}
+
+
+inline size_t Chunk::GetOrigColEnd() const
+{
+   return(m_origColEnd);
+}
+
+
+inline void Chunk::SetOrigColEnd(size_t col)
+{
+#ifdef DEBUG
+   if (col > uncrustify::limits::TOO_BIG_VALUE)
+   {
+      fprintf(stderr, "%s(%d): the input parameter is too big %zu\n",
+              __func__, __LINE__, col);
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+#endif
+   m_origColEnd = col;
+}
+
+
+inline size_t Chunk::GetOrigPrevSp() const
+{
+   return(m_origPrevSp);
+}
+
+
+inline void Chunk::SetOrigPrevSp(size_t col)
+{
+#ifdef DEBUG
+   if (col > uncrustify::limits::TOO_BIG_VALUE)
+   {
+      fprintf(stderr, "%s(%d): the input parameter is too big %zu\n",
+              __func__, __LINE__, col);
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+#endif
+   m_origPrevSp = col;
+}
+
+
+inline size_t Chunk::GetColumn() const
+{
+   return(m_column);
+}
+
+
+inline size_t Chunk::GetColumnEnd() const
+{
+   return(m_column + Len());
+}
+
+
+inline void Chunk::SetColumn(size_t col)
+{
+#ifdef DEBUG
+   if (col > uncrustify::limits::TOO_BIG_VALUE)
+   {
+      fprintf(stderr, "%s(%d): the input parameter is too big %zu\n",
+              __func__, __LINE__, col);
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+#endif
+   m_column = col;
+}
+
+
+inline size_t Chunk::GetColumnIndent() const
+{
+   return(m_columnIndent);
+}
+
+
+inline void Chunk::SetColumnIndent(size_t col)
+{
+#ifdef DEBUG
+   if (col > uncrustify::limits::TOO_BIG_VALUE)
+   {
+      fprintf(stderr, "%s(%d): the input parameter is too big %zu\n",
+              __func__, __LINE__, col);
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+#endif
+   m_columnIndent = col;
+}
+
+
+inline size_t Chunk::GetNlCount() const
+{
+   return(m_nlCount);
+}
+
+
+inline void Chunk::SetNlCount(size_t cnt)
+{
+#ifdef DEBUG
+   if (cnt > uncrustify::limits::TOO_BIG_VALUE)
+   {
+      fprintf(stderr, "%s(%d): the input parameter is too big %zu\n",
+              __func__, __LINE__, cnt);
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+#endif
+
+#ifdef DEBUG
+   E_Token tok = this->GetType();
+
+   if (  tok == E_Token::CT_NEWLINE
+      || tok == E_Token::CT_NL_CONT
+      || tok == E_Token::CT_COMMENT_MULTI
+      || tok == E_Token::CT_COMMENT_CPP
+      || tok == E_Token::CT_STRING_MULTI)
+   {
+      // it is allowed to set the value of m_nlCount for those token
+      m_nlCount = cnt;
+   }
+   else
+   {
+      // Issue #4550
+      // see also <uncrustify/documentation>/Chunk_NlCount.txt
+      fprintf(stderr, "%s(%d): it is not allowed to set the value of m_nlCount for this token CT_%s\n",
+              __func__, __LINE__, get_token_name(tok));
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+#else /* DEBUG */
+   m_nlCount = cnt;
+#endif /* DEBUG */
+}
+
+
+inline size_t Chunk::GetNlColumn() const
+{
+   return(m_nlColumn);
+}
+
+
+inline void Chunk::SetNlColumn(size_t col)
+{
+#ifdef DEBUG
+   if (col > uncrustify::limits::TOO_BIG_VALUE)
+   {
+      fprintf(stderr, "%s(%d): the input parameter is too big %zu\n",
+              __func__, __LINE__, col);
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+#endif
+   m_nlColumn = col;
+}
+
+
+inline size_t Chunk::GetLevel() const
+{
+   return(m_level);
+}
+
+
+inline void Chunk::SetLevel(size_t level)
+{
+#ifdef DEBUG
+   if (level > uncrustify::limits::TOO_BIG_VALUE)
+   {
+      fprintf(stderr, "%s(%d): the input parameter is too big %zu\n",
+              __func__, __LINE__, level);
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+#endif
+   m_level = level;
+}
+
+
+inline size_t Chunk::GetBraceLevel() const
+{
+   return(m_braceLevel);
+}
+
+
+inline void Chunk::SetBraceLevel(size_t lvl)
+{
+#ifdef DEBUG
+   if (lvl > uncrustify::limits::TOO_BIG_VALUE)
+   {
+      fprintf(stderr, "%s(%d): the input parameter is too big %zu\n",
+              __func__, __LINE__, lvl);
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+#endif
+   m_braceLevel = lvl;
+}
+
+
+inline size_t Chunk::GetPpLevel() const
+{
+   return(m_ppLevel);
+}
+
+
+inline void Chunk::SetPpLevel(size_t lvl)
+{
+#ifdef DEBUG
+   if (lvl > uncrustify::limits::TOO_BIG_VALUE)
+   {
+      fprintf(stderr, "%s(%d): the input parameter is too big %zu\n",
+              __func__, __LINE__, lvl);
+      log_flush(true);
+      exit(EX_SOFTWARE);
+   }
+#endif
+   m_ppLevel = lvl;
+}
+
+
+inline bool Chunk::GetAfterTab() const
+{
+   return(m_afterTab);
+}
+
+
+inline void Chunk::SetAfterTab(bool afterTab)
+{
+   m_afterTab = afterTab;
+}
+
+
+inline Chunk *Chunk::GetNextNl(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsNewline, scope, E_Direction::FORWARD, true));
+}
+
+
+inline Chunk *Chunk::GetPrevNl(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsNewline, scope, E_Direction::BACKWARD, true));
+}
+
+
+inline Chunk *Chunk::GetNextNnl(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsNewline, scope, E_Direction::FORWARD, false));
+}
+
+
+inline Chunk *Chunk::GetPrevNnl(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsNewline, scope, E_Direction::BACKWARD, false));
+}
+
+
+inline Chunk *Chunk::GetNextNc(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsComment, scope, E_Direction::FORWARD, false));
+}
+
+
+inline Chunk *Chunk::GetPrevNc(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsComment, scope, E_Direction::BACKWARD, false));
+}
+
+
+inline Chunk *Chunk::GetNextNcNnl(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsCommentOrNewline, scope, E_Direction::FORWARD, false));
+}
+
+
+inline Chunk *Chunk::GetPrevNcNnl(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsCommentOrNewline, scope, E_Direction::BACKWARD, false));
+}
+
+
+inline Chunk *Chunk::GetNextNcNnlNpp(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsCommentNewlineOrPreproc, scope, E_Direction::FORWARD, false));
+}
+
+
+inline Chunk *Chunk::GetPrevNcNnlNpp(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsCommentNewlineOrPreproc, scope, E_Direction::BACKWARD, false));
+}
+
+
+inline Chunk *Chunk::GetNextNppOrNcNnl(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsCommentOrNewlineInPreproc, scope, E_Direction::FORWARD, false));
+}
+
+
+inline Chunk *Chunk::GetPrevNppOrNcNnl(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsCommentOrNewlineInPreproc, scope, E_Direction::BACKWARD, false));
+}
+
+
+inline Chunk *Chunk::PpaGetNextNcNnl() const
+{
+   return(SearchPpa(&Chunk::IsCommentOrNewline, false));
+}
+
+
+inline Chunk *Chunk::GetNextNcNnlNet(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsCommentNewlineOrEmptyText, scope, E_Direction::FORWARD, false));
+}
+
+
+inline Chunk *Chunk::GetPrevNcNnlNet(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsCommentNewlineOrEmptyText, scope, E_Direction::BACKWARD, false));
+}
+
+
+inline Chunk *Chunk::GetPrevNcNnlNi(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsCommentNewlineOrIgnored, scope, E_Direction::BACKWARD, false));
+}
+
+
+inline Chunk *Chunk::GetNextNisq(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsSquareBracket, scope, E_Direction::FORWARD, false));
+}
+
+
+inline Chunk *Chunk::GetNextType(const E_Token type, const int level, const E_Scope scope) const
+{
+   return(SearchTypeLevel(type, scope, E_Direction::FORWARD, level));
+}
+
+
+inline Chunk *Chunk::GetPrevType(const E_Token type, const int level, const E_Scope scope) const
+{
+   return(SearchTypeLevel(type, scope, E_Direction::BACKWARD, level));
+}
+
+
+inline Chunk *Chunk::GetNextString(const char *str, const size_t len, const int level, const E_Scope scope) const
+{
+   return(SearchStringLevel(str, len, level, scope, E_Direction::FORWARD));
+}
+
+
+inline Chunk *Chunk::GetPrevString(const char *str, const size_t len, const int level, const E_Scope scope) const
+{
+   return(SearchStringLevel(str, len, level, scope, E_Direction::BACKWARD));
+}
+
+
+inline Chunk *Chunk::GetNextNvb(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsVBrace, scope, E_Direction::FORWARD, false));
+}
+
+
+inline Chunk *Chunk::GetPrevNvb(const E_Scope scope) const
+{
+   return(Search(&Chunk::IsVBrace, scope, E_Direction::BACKWARD, false));
+}
+
+
+inline bool Chunk::IsTypeAndLevel(const E_Token type, const int level) const
+{
+   return(  (  level < 0
+            || m_level == static_cast<size_t>(level))
+         && m_type == type);
 }
 
 
 inline bool Chunk::Is(E_Token token) const
 {
    return(  IsNotNullChunk()
-         && type == token);
+         && m_type == token);
+}
+
+
+inline bool Chunk::IsString(const char *str, bool caseSensitive) const
+{
+   return(IsStringAndLevel(str, strlen(str), caseSensitive, ANY_LEVEL));
 }
 
 
@@ -736,16 +1713,16 @@ inline bool Chunk::IsNot(E_Token token) const
 
 inline bool Chunk::IsNewline() const
 {
-   return(  Is(CT_NEWLINE)
-         || Is(CT_NL_CONT));
+   return(  Is(E_Token::CT_NEWLINE)
+         || Is(E_Token::CT_NL_CONT));
 }
 
 
 inline bool Chunk::IsComment() const
 {
-   return(  Is(CT_COMMENT)
-         || Is(CT_COMMENT_MULTI)
-         || Is(CT_COMMENT_CPP));
+   return(  Is(E_Token::CT_COMMENT)
+         || Is(E_Token::CT_COMMENT_MULTI)
+         || Is(E_Token::CT_COMMENT_CPP));
 }
 
 
@@ -759,7 +1736,7 @@ inline bool Chunk::IsEmptyText() const
 inline bool Chunk::IsPreproc() const
 {
    return(  IsNotNullChunk()
-         && flags.test(PCF_IN_PREPROC));
+         && TestFlags(PCF_IN_PREPROC));
 }
 
 
@@ -798,465 +1775,184 @@ inline bool Chunk::IsCommentNewlineOrIgnored() const
 {
    return(  IsComment()
          || IsNewline()
-         || Is(CT_IGNORED));
+         || Is(E_Token::CT_IGNORED));
+}
+
+
+inline bool Chunk::IsSingleLineComment() const
+{
+   return(  Is(E_Token::CT_COMMENT)
+         || Is(E_Token::CT_COMMENT_CPP));
 }
 
 
 inline bool Chunk::IsSquareBracket() const
 {
-   return(  Is(CT_SQUARE_OPEN)
-         || Is(CT_TSQUARE)
-         || Is(CT_SQUARE_CLOSE));
+   return(  Is(E_Token::CT_SQUARE_OPEN)
+         || Is(E_Token::CT_TSQUARE)
+         || Is(E_Token::CT_SQUARE_CLOSE));
 }
 
 
 inline bool Chunk::IsVBrace() const
 {
-   return(  Is(CT_VBRACE_OPEN)
-         || Is(CT_VBRACE_CLOSE));
+   return(  Is(E_Token::CT_VBRACE_OPEN)
+         || Is(E_Token::CT_VBRACE_CLOSE));
 }
 
 
 inline bool Chunk::IsStar() const
 {
    return(  Len() == 1
-         && str[0] == '*'
-         && IsNot(CT_OPERATOR_VAL));
+         && m_text[0] == '*'
+         && IsNot(E_Token::CT_OPERATOR_VAL));
 }
 
 
-// TODO remove when possible
-static inline bool chunk_is_token(const Chunk *pc, E_Token c_token)
+inline bool Chunk::IsSemicolon() const
 {
-   return(  pc != nullptr
-         && pc->IsNotNullChunk()
-         && pc->type == c_token);
+   return(  Is(E_Token::CT_SEMICOLON)
+         || Is(E_Token::CT_VSEMICOLON));
 }
 
 
-// TODO remove when possible
-static inline bool chunk_is_not_token(const Chunk *pc, E_Token c_token)
+inline bool Chunk::IsWord() const
 {
-   return(  pc != nullptr
-         && pc->IsNotNullChunk()
-         && pc->type != c_token);
+   return(  Len() >= 1
+         && CharTable::IsKw1(m_text[0]));
 }
 
 
-/**
- * Skips to the closing match for the current paren/brace/square.
- *
- * @param  cur    The opening or closing paren/brace/square
- * @param  scope  chunk section to consider
- *
- * @return nullptr or the matching paren/brace/square
- */
-static inline Chunk *chunk_skip_to_match(Chunk *cur, E_Scope scope = E_Scope::ALL)
+inline bool Chunk::IsNullable() const
 {
-   if (  cur != nullptr
-      && (  chunk_is_token(cur, CT_PAREN_OPEN)
-         || chunk_is_token(cur, CT_SPAREN_OPEN)
-         || chunk_is_token(cur, CT_FPAREN_OPEN)
-         || chunk_is_token(cur, CT_TPAREN_OPEN)
-         || chunk_is_token(cur, CT_BRACE_OPEN)
-         || chunk_is_token(cur, CT_VBRACE_OPEN)
-         || chunk_is_token(cur, CT_ANGLE_OPEN)
-         || chunk_is_token(cur, CT_SQUARE_OPEN)))
-   {
-      return(cur->GetNextType((E_Token)(cur->type + 1), cur->level, scope));
-   }
-   return(cur);
+   return(  (  language_is_set(lang_flag_e::LANG_CS)
+            || language_is_set(lang_flag_e::LANG_VALA))
+         && Len() == 1
+         && m_text[0] == '?');
 }
 
 
-static inline Chunk *chunk_skip_to_match_rev(Chunk *cur, E_Scope scope = E_Scope::ALL)
+inline bool Chunk::IsMsRef() const
 {
-   if (  cur != nullptr
-      && (  chunk_is_token(cur, CT_PAREN_CLOSE)
-         || chunk_is_token(cur, CT_SPAREN_CLOSE)
-         || chunk_is_token(cur, CT_FPAREN_CLOSE)
-         || chunk_is_token(cur, CT_TPAREN_CLOSE)
-         || chunk_is_token(cur, CT_BRACE_CLOSE)
-         || chunk_is_token(cur, CT_VBRACE_CLOSE)
-         || chunk_is_token(cur, CT_ANGLE_CLOSE)
-         || chunk_is_token(cur, CT_SQUARE_CLOSE)))
-   {
-      return(cur->GetPrevType((E_Token)(cur->type - 1), cur->level, scope));
-   }
-   return(cur);
+   return(  language_is_set(lang_flag_e::LANG_CPP)
+         && Len() == 1
+         && m_text[0] == '^'
+         && IsNot(E_Token::CT_OPERATOR_VAL));
 }
 
 
-//! skip to the final word/type in a :: chain
-Chunk *chunk_skip_dc_member(Chunk *start, E_Scope scope = E_Scope::ALL);
-Chunk *chunk_skip_dc_member_rev(Chunk *start, E_Scope scope = E_Scope::ALL);
-
-
-/**
- * Returns true if the chunk under test is an inheritance access specifier
- */
-static inline bool chunk_is_cpp_inheritance_access_specifier(Chunk *pc)
+inline bool Chunk::IsPointerOperator() const
 {
-   return(  language_is_set(LANG_CPP)
-         && pc != nullptr
-         && pc->IsNotNullChunk()
-         && (  chunk_is_token(pc, CT_ACCESS)
-            || chunk_is_token(pc, CT_QUALIFIER))
-         && (  std::strncmp(pc->str.c_str(), "private", 7) == 0
-            || std::strncmp(pc->str.c_str(), "protected", 9) == 0
-            || std::strncmp(pc->str.c_str(), "public", 6) == 0));
-} // chunk_is_cpp_inheritance_access_specifier
-
-
-static inline bool chunk_is_colon(Chunk *pc)
-{
-   return(  chunk_is_token(pc, CT_ACCESS_COLON)
-         || chunk_is_token(pc, CT_ASM_COLON)
-         || chunk_is_token(pc, CT_BIT_COLON)
-         || chunk_is_token(pc, CT_CASE_COLON)
-         || chunk_is_token(pc, CT_CLASS_COLON)
-         || chunk_is_token(pc, CT_COLON)
-         || chunk_is_token(pc, CT_COND_COLON)
-         || chunk_is_token(pc, CT_CONSTR_COLON)
-         || chunk_is_token(pc, CT_CS_SQ_COLON)
-         || chunk_is_token(pc, CT_D_ARRAY_COLON)
-         || chunk_is_token(pc, CT_FOR_COLON)
-         || chunk_is_token(pc, CT_LABEL_COLON)
-         || chunk_is_token(pc, CT_OC_COLON)
-         || chunk_is_token(pc, CT_OC_DICT_COLON)
-         || chunk_is_token(pc, CT_TAG_COLON)
-         || chunk_is_token(pc, CT_WHERE_COLON));
+   return(  IsStar()
+         || IsAddress()
+         || IsMsRef()
+         || IsNullable());
 }
 
 
-static inline bool chunk_is_single_line_comment(Chunk *pc)
+inline bool Chunk::IsPointerOrReference() const
 {
-   return(  chunk_is_token(pc, CT_COMMENT)
-         || chunk_is_token(pc, CT_COMMENT_CPP));
+   return(  IsPointerOperator()
+         || Is(E_Token::CT_BYREF));
 }
 
 
-// TODO remove when possible
-static inline bool chunk_is_newline(Chunk *pc)
+inline bool Chunk::IsBraceOpen() const
 {
-   return(  chunk_is_token(pc, CT_NEWLINE)
-         || chunk_is_token(pc, CT_NL_CONT));
+   return(  Is(E_Token::CT_BRACE_OPEN)
+         || Is(E_Token::CT_VBRACE_OPEN));
 }
 
 
-static inline bool chunk_is_semicolon(Chunk *pc)
+inline bool Chunk::IsBraceClose() const
 {
-   return(  chunk_is_token(pc, CT_SEMICOLON)
-         || chunk_is_token(pc, CT_VSEMICOLON));
+   return(  Is(E_Token::CT_BRACE_CLOSE)
+         || Is(E_Token::CT_VBRACE_CLOSE));
 }
 
 
-static inline bool chunk_is_Doxygen_comment(Chunk *pc)
+inline bool Chunk::IsParenOpen() const
 {
-   if (  pc == nullptr
-      || !pc->IsComment())
+   return(  Is(E_Token::CT_PAREN_OPEN)
+         || Is(E_Token::CT_FPAREN_OPEN)
+         || Is(E_Token::CT_LPAREN_OPEN)
+         || Is(E_Token::CT_PPAREN_OPEN)
+         || Is(E_Token::CT_RPAREN_OPEN)
+         || Is(E_Token::CT_SPAREN_OPEN)
+         || Is(E_Token::CT_TPAREN_OPEN));
+}
+
+
+inline bool Chunk::IsParenClose() const
+{
+   return(  Is(E_Token::CT_PAREN_CLOSE)
+         || Is(E_Token::CT_FPAREN_CLOSE)
+         || Is(E_Token::CT_LPAREN_CLOSE)
+         || Is(E_Token::CT_PPAREN_CLOSE)
+         || Is(E_Token::CT_RPAREN_CLOSE)
+         || Is(E_Token::CT_SPAREN_CLOSE)
+         || Is(E_Token::CT_TPAREN_CLOSE));
+}
+
+
+inline bool Chunk::IsSamePreproc(const Chunk *other) const
+{
+   return(  IsNotNullChunk()
+         && other->IsNotNullChunk()
+         && (TestFlags(PCF_IN_PREPROC) == other->TestFlags(PCF_IN_PREPROC)));
+}
+
+
+inline bool Chunk::SafeToDeleteNl() const
+{
+   const Chunk *tmp = GetPrev();
+
+   if (tmp->Is(E_Token::CT_COMMENT_CPP))
    {
       return(false);
    }
-   // check the third character
-   const char   *sComment = pc->Text();
-   const size_t len       = strlen(sComment);
-
-   if (len < 3)
-   {
-      return(false);
-   }
-   return(  (sComment[2] == '/')
-         || (sComment[2] == '!')
-         || (sComment[2] == '@'));
+   return(tmp->IsSamePreproc(GetNext()));
 }
 
 
-static inline bool chunk_is_type(Chunk *pc)
+inline bool Chunk::IsEnum() const
 {
-   return(  chunk_is_token(pc, CT_TYPE)
-         || chunk_is_token(pc, CT_PTR_TYPE)
-         || chunk_is_token(pc, CT_BYREF)
-         || chunk_is_token(pc, CT_DC_MEMBER)
-         || chunk_is_token(pc, CT_QUALIFIER)
-         || chunk_is_token(pc, CT_STRUCT)
-         || chunk_is_token(pc, CT_ENUM)
-         || chunk_is_token(pc, CT_UNION));
+   return(  Is(E_Token::CT_ENUM)
+         || Is(E_Token::CT_ENUM_CLASS));
 }
 
 
-static inline bool chunk_is_str(Chunk *pc, const char *str)
+inline bool Chunk::IsClassOrStruct() const
 {
-   size_t len = strlen(str);
-
-   return(  pc != nullptr                         // valid pc pointer
-         && (pc->Len() == len)                    // token size equals size parameter
-         && (memcmp(pc->Text(), str, len) == 0)); // token name is the same as str parameter
-
-   /*
-    * TODO: possible access beyond array for memcmp, check this
-    * why not use strncmp here?
-    */
+   return(  Is(E_Token::CT_CLASS)
+         || Is(E_Token::CT_STRUCT));
 }
 
 
-static inline bool chunk_is_str_case(Chunk *pc, const char *str, size_t len)
+inline bool Chunk::IsClassStructOrUnion() const
 {
-   return(  pc != nullptr
-         && (pc->Len() == len)
-         && (strncasecmp(pc->Text(), str, len) == 0));
+   return(  IsClassOrStruct()
+         || Is(E_Token::CT_UNION));
 }
 
 
-static inline bool chunk_is_word(Chunk *pc)
+inline bool Chunk::IsClassEnumStructOrUnion() const
 {
-   return(  pc != nullptr
-         && (pc->Len() >= 1)
-         && CharTable::IsKw1(pc->str[0]));
+   return(  IsClassStructOrUnion()
+         || IsEnum());
 }
 
 
-static inline bool chunk_is_nullable(Chunk *pc)
+inline Chunk *Chunk::CopyAndAddAfter(Chunk *ref) const
 {
-   return(  language_is_set(LANG_CS)
-         && (pc != nullptr)
-         && (pc->Len() == 1)
-         && (pc->str[0] == '?'));
+   return(CopyAndAdd(ref, E_Direction::FORWARD));
 }
 
 
-static inline bool chunk_is_addr(Chunk *pc)
+inline Chunk *Chunk::CopyAndAddBefore(Chunk *ref) const
 {
-   if (  pc != nullptr
-      && pc->IsNotNullChunk()
-      && (  chunk_is_token(pc, CT_BYREF)
-         || (  (pc->Len() == 1)
-            && (pc->str[0] == '&')
-            && pc->type != CT_OPERATOR_VAL)))
-   {
-      Chunk *prev = pc->GetPrev();
-
-      if (  pc->flags.test(PCF_IN_TEMPLATE)
-         && (  chunk_is_token(prev, CT_COMMA)
-            || chunk_is_token(prev, CT_ANGLE_OPEN)))
-      {
-         return(false);
-      }
-      return(true);
-   }
-   return(false);
+   return(CopyAndAdd(ref, E_Direction::BACKWARD));
 }
-
-
-static inline bool chunk_is_msref(Chunk *pc) // ms compilers for C++/CLI and WinRT use '^' instead of '*' for marking up reference types vs pointer types
-{
-   return(  language_is_set(LANG_CPP)
-         && (  pc != nullptr
-            && (pc->Len() == 1)
-            && (pc->str[0] == '^')
-            && pc->type != CT_OPERATOR_VAL));
-}
-
-
-static inline bool chunk_is_ptr_operator(Chunk *pc)
-{
-   return(  pc != nullptr
-         && (  (  pc->IsStar()
-               || chunk_is_addr(pc)
-               || chunk_is_msref(pc))
-            || chunk_is_nullable(pc)));
-}
-
-
-static inline bool chunk_is_pointer_or_reference(Chunk *pc)
-{
-   return(  chunk_is_ptr_operator(pc)
-         || chunk_is_token(pc, CT_BYREF));
-}
-
-
-//! Check to see if there is a newline between the two chunks
-bool chunk_is_newline_between(Chunk *start, Chunk *end);
-
-
-static inline bool chunk_is_closing_brace(Chunk *pc)
-{
-   return(  chunk_is_token(pc, CT_BRACE_CLOSE)
-         || chunk_is_token(pc, CT_VBRACE_CLOSE));
-}
-
-
-static inline bool chunk_is_opening_brace(Chunk *pc)
-{
-   return(  chunk_is_token(pc, CT_BRACE_OPEN)
-         || chunk_is_token(pc, CT_VBRACE_OPEN));
-}
-
-
-static inline bool chunk_is_paren_open(Chunk *pc)
-{
-   return(  chunk_is_token(pc, CT_PAREN_OPEN)
-         || chunk_is_token(pc, CT_SPAREN_OPEN)
-         || chunk_is_token(pc, CT_TPAREN_OPEN)
-         || chunk_is_token(pc, CT_FPAREN_OPEN)
-         || chunk_is_token(pc, CT_LPAREN_OPEN));
-}
-
-
-static inline bool chunk_is_paren_close(Chunk *pc)
-{
-   return(  chunk_is_token(pc, CT_PAREN_CLOSE)
-         || chunk_is_token(pc, CT_SPAREN_CLOSE)
-         || chunk_is_token(pc, CT_TPAREN_CLOSE)
-         || chunk_is_token(pc, CT_FPAREN_CLOSE));
-}
-
-
-/**
- * Returns true if either chunk is null or both have the same preproc flags.
- * If this is true, you can remove a newline/nl_cont between the two.
- */
-static inline bool chunk_same_preproc(Chunk *pc1, Chunk *pc2)
-{
-   return(  pc1 == nullptr
-         || pc1->IsNullChunk()
-         || pc2 == nullptr
-         || pc2->IsNullChunk()
-         || ((pc1->flags & PCF_IN_PREPROC) == (pc2->flags & PCF_IN_PREPROC)));
-}
-
-
-/**
- * Returns true if it is safe to delete the newline token.
- * The prev and next chunks must have the same PCF_IN_PREPROC flag AND
- * the newline can't be after a C++ comment.
- */
-static inline bool chunk_safe_to_del_nl(Chunk *nl)
-{
-   if (nl == nullptr)
-   {
-      nl = Chunk::NullChunkPtr;
-   }
-   Chunk *tmp = nl->GetPrev();
-
-   if (chunk_is_token(tmp, CT_COMMENT_CPP))
-   {
-      return(false);
-   }
-   return(chunk_same_preproc(tmp, nl->GetNext()));
-}
-
-
-/**
- * Checks if a chunk points to the opening parenthese of a
- * for(...in...) loop in Objective-C.
- *
- * @return true  - the chunk is the opening parentheses of a for in loop
- */
-static inline bool chunk_is_forin(Chunk *pc)
-{
-   if (  language_is_set(LANG_OC)
-      && chunk_is_token(pc, CT_SPAREN_OPEN))
-   {
-      Chunk *prev = pc->GetPrevNcNnl();
-
-      if (chunk_is_token(prev, CT_FOR))
-      {
-         Chunk *next = pc;
-
-         while (  next != nullptr
-               && next->type != CT_SPAREN_CLOSE
-               && next->type != CT_IN)
-         {
-            next = next->GetNextNcNnl();
-         }
-
-         if (chunk_is_token(next, CT_IN))
-         {
-            return(true);
-         }
-      }
-   }
-   return(false);
-}
-
-
-/**
- * Returns true if pc is an CT_ATTRIBUTE or CT_DECLSPEC
- */
-bool chunk_is_attribute_or_declspec(Chunk *pc);
-
-
-/**
- * Returns true if pc is one of CT_CLASS, CT_ENUM, CT_ENUM_CLASS, CT_STRUCT or CT_UNION
- */
-bool chunk_is_class_enum_struct_union(Chunk *pc);
-
-
-/**
- * Returns true if pc is a CT_CLASS or CT_STRUCT
- */
-bool chunk_is_class_or_struct(Chunk *pc);
-
-
-/**
- * Returns true if pc is one of CT_CLASS, CT_STRUCT or CT_UNION
- */
-bool chunk_is_class_struct_union(Chunk *pc);
-
-
-/**
- * Returns true if pc is a CT_ENUM or CT_ENUM_CLASS
- */
-bool chunk_is_enum(Chunk *pc);
-
-
-void set_chunk_type_real(Chunk *pc, E_Token tt, const char *func, int line);
-
-
-void set_chunk_parent_real(Chunk *pc, E_Token tt, const char *func, int line);
-
-
-#define set_chunk_type(pc, tt)      set_chunk_type_real((pc), (tt), __unqualified_func__, __LINE__)
-
-
-#define set_chunk_parent(pc, tt)    set_chunk_parent_real((pc), (tt), __unqualified_func__, __LINE__)
-
-
-E_Token get_chunk_parent_type(Chunk *pc);
-
-
-void chunk_flags_set_real(Chunk *pc, pcf_flags_t clr_bits, pcf_flags_t set_bits);
-
-
-#define chunk_flags_upd(pc, cc, ss)    chunk_flags_set_real((pc), (cc), (ss))
-
-
-#define chunk_flags_set(pc, ss)        chunk_flags_set_real((pc), {}, (ss))
-
-
-#define chunk_flags_clr(pc, cc)        chunk_flags_set_real((pc), (cc), {})
-
-
-void chunk_set_parent(Chunk *pc, Chunk *parent);
-
-
-E_Token get_type_of_the_parent(Chunk *pc);
-
-
-/**
- * @brief compare the positions of two tokens in a file.
- *
- * The function compares the two positions of two tokens.
- *
- * @param A_token
- * @param B_token
- *
- * @return returns an integer less than, equal to, or greater than zero
- *         if A_token is found, respectively, to be less/before than, to
- *         match, or be greater/after than B_token.
- */
-int chunk_compare_position(const Chunk *A_token, const Chunk *B_token);
 
 
 #endif /* CHUNK_LIST_H_INCLUDED */

@@ -3,10 +3,12 @@ Author:
 
 Maintenance:
 Guy Maurel
+Michele Calgaro
 Matthew Woehlke
 
-until 2020-11-05:
+until 2022-11-22:
 Other collaborators:
+Adam Ernst
 Alan Fineberg
 Alexander GQ Gerasiov
 Alex Henrie
@@ -30,7 +32,10 @@ Biswapriyo Nath
 B. Kevin Hardman
 Bogdan Popescu
 Brandon Slack
+Brecht Sanders
 Brendan Long
+Brian Kelley
+Cédric Villemain
 CharlieYJH
 Chris Lalancette
 Clemens Rabe
@@ -38,13 +43,16 @@ Clint Lawrence
 Code Able
 Cody Schafer
 Corentin Noël
+Dandielo
 Daniel Chumak
+Daniele Bartolini
 Dan Rose
 Dave Lee
 David Catmull
 David E. O'Brien
 David Lechner
 David Schaefgen
+Denzel
 Dirk Thomas
 Dittrich, Rico
 Dmitry Marakasov
@@ -55,10 +63,16 @@ Dženan Zukić
 Eism
 Emerson Knapp
 Emmanuel Christophe
+Enzo Einhorn
+epac-tom
+Eric Chamberland
 Ethan Gao
 Florin Pop
+Francisco Molina
+Frank J. T. Wojcik
 Gary Ash
 Ger Hobbelt
+guy maurel
 Hackerpilot
 Hannes Schmidt
 hghdev
@@ -68,42 +82,56 @@ Ilya Lyubimov
 Ingo Brückl
 Ivan Nazarenko
 Ivan Romanov
+Jakub Lukasiewicz
+Jakub Łukasiewicz
 Jakub Schmidtke
 Jan Weiß
 Jason
 JavDevGames
+Jean-Christophe Fillion-Robin
+Jean YNE
 Jeremy H
 Jeremy T Hilliker
 Jim Meyering
 Jiri Hruska
+jodi.the.tigger@gmail.com
+Jody Hagins
 Joel Ostraat
 Joergen Ibsen
 Johnny Oskarsson
 Jonas Hurrelmann
+Jorengarenar
 Joshua Gross
 Joshua Parker
 Julian Picht
 Kalle Raiskila
 Keepun
+Kevin Wong
 krys
 Laurent Tréguier
 Lauri Kasanen
 lbmaian
 Leon Breedt
 Lorenz Haas
+Lukas Tomovic
 Lykurg
 Maciej Bogusz
+Manning, James
 Marco Stephan
+Marcus Nilsson
 Marek Fort
 Marius Zwicker
 Mark Stegeman
 Markus Geimer
+Martin Delille
 Martin Simonovsky
 Martin Storsjo
 Matthew McDole
 Matthew Woehlke
+Mauricio Mendes
 Maxim Mikityanskiy
 Max Smolens
+MDW
 MeXx
 Michaël Peeters
 Michele Calgaro
@@ -116,8 +144,11 @@ MrTheMake
 Nate
 neok-m4700
 Nico Decker
+Nolan O'Brien
+notgapriel
 Oleg Liatte
 Oleg Smolsky
+olemayu
 Owen Rudge
 Pat Notz
 Patrick Rohr
@@ -130,20 +161,32 @@ Peter Bruin
 Peter Hartley
 Peter Jonas
 Peter Kolbus
+Peter Tao
 Peter Waller
+Pete Tao
 Piet Van Reepingen
+PMheart
+Rafael Kitover
 Randolph R. Settgast
 Randolph Settgast
 RaveTheTadpole
+Ray Strode
+Reuben Thomas
+Richard Maxwell
+Ricky Lopez
 Roland Schulz
+Roman Gordienko
 Ryan Maxwell
+Sai Asish Y
 Samish Chandra Kolli
 Samish Kolli
 Scott Bilas
 Sebastian Andersson
+Sebastian Bilek
 S. Gilles
 Shazron Abdullah
 Siddharth Kannan
+Simon Slamka
 Slávek Banko
 Spark-NF
 Stefan Koch
@@ -151,6 +194,7 @@ Stefan Nunninger
 Stephen Gilles
 Steven Lee
 Suhaib Ishaque
+Takahiro Ueda
 t-bltg
 Tim Hütz
 Timotheus Pokorra
@@ -164,3 +208,4 @@ Vojtěch Balík
 Vyacheslav Shegai
 Waldir Pimenta
 Yannick Bühler
+Yegor Yefremov

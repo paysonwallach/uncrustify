@@ -8,35 +8,55 @@
 
 #include "sorting.h"
 
-#include "newlines.h"
-#include "prototypes.h"
+#include "chunk.h"
+#include "log_rules.h"
+#include "mark_change.h"
+#include "newlines/add.h"
+#include "newlines/double_newline.h"
+#include "unc_ctype.h"
 
+#include <algorithm>
+#include <cstdio>  // to get fprintf
+#include <cstring>
+#include <memory>
 #include <regex>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
 
 constexpr static auto LCURRENT = LSORT;
 
+
 using namespace uncrustify;
 
-Option<std::string>  *include_category_options[] =
+
+Option<std::string> *include_category_options[] =
 {
    &options::include_category_0,
    &options::include_category_1,
    &options::include_category_2,
 };
+
+
 constexpr static int kIncludeCategoriesCount = 3;
 
 
 struct include_category
 {
-   include_category(const std::string &pattern)
-      : regex(pattern)
+   include_category(const std::string &pattern_)
+      : pattern(pattern_)
+      , regex(pattern_)
    {
    }
-   std::regex regex;
+   std::string pattern;
+   std::regex  regex;
 };
 
 
-include_category *include_categories[kIncludeCategoriesCount];
+std::unique_ptr<include_category>     include_categories[kIncludeCategoriesCount];
+std::unordered_map<Chunk *, int>      chunk_priority_cache;
+std::unordered_map<std::string, bool> filename_without_ext_cache;
 
 
 /**
@@ -49,31 +69,13 @@ include_category *include_categories[kIncludeCategoriesCount];
  * @retval  > 0
  * @retval  < 0
  */
-static int compare_chunks(Chunk *pc1, Chunk *pc2, bool tcare = false);
+static int compare_chunks(Chunk *pc1, Chunk *pc2, bool tcare);
 
 
 /**
- * Sorting should be pretty rare and should usually only include a few chunks.
- * We need to minimize the number of swaps, as those are expensive.
- * So, we do a min sort.
+ * Sort all of the chunks in O(n log n) time with a maximum of O(n) swaps
  */
 static void do_the_sort(Chunk **chunks, size_t num_chunks);
-
-
-#define MARK_CHANGE()    mark_change(__func__, __LINE__)
-
-
-static void mark_change(const char *func, size_t line)
-{
-   LOG_FUNC_ENTRY();
-   cpd.changes++;
-
-   if (cpd.pass_count == 0)
-   {
-      LOG_FMT(LCHANGE, "%s(%d): change %d on %s:%zu\n",
-              __func__, __LINE__, cpd.changes, func, line);
-   }
-}
 
 
 static void prepare_categories()
@@ -84,11 +86,17 @@ static void prepare_categories()
 
       if (!cat_pattern.empty())
       {
-         include_categories[i] = new include_category(cat_pattern);
+         // Compiling a std::regex is expensive, so keep the one built for a
+         // previous file unless the option it came from has changed.
+         if (  include_categories[i] == nullptr
+            || include_categories[i]->pattern != cat_pattern)
+         {
+            include_categories[i] = std::make_unique<include_category>(cat_pattern);
+         }
       }
       else
       {
-         include_categories[i] = nullptr;
+         include_categories[i].reset();
       }
    }
 }
@@ -96,66 +104,118 @@ static void prepare_categories()
 
 static void cleanup_categories()
 {
-   for (auto &include_category : include_categories)
-   {
-      if (include_category == nullptr)
-      {
-         continue;
-      }
-      delete include_category;
-      include_category = NULL;
-   }
+   // The compiled category regexes deliberately outlive the file; they are
+   // rebuilt by prepare_categories() if the options change.
+   chunk_priority_cache.clear();
+   filename_without_ext_cache.clear();
 }
 
 
 static int get_chunk_priority(Chunk *pc)
 {
+   if (chunk_priority_cache.count(pc) > 0)
+   {
+      return(chunk_priority_cache[pc]);
+   }
+   int category = kIncludeCategoriesCount;
+
    for (int i = 0; i < kIncludeCategoriesCount; i++)
    {
       if (include_categories[i] != nullptr)
       {
-         if (std::regex_match(pc->Text(), include_categories[i]->regex))
+         if (std::regex_match(pc->GetLogText(), include_categories[i]->regex))
          {
-            return(i);
+            category = i;
+            break;
          }
       }
    }
 
-   return(kIncludeCategoriesCount);
+   chunk_priority_cache[pc] = category;
+   return(category);
 }
 
 
-/**
- * Returns true if the text contains filename without extension.
- */
+/** Strip the directory and extension off the file being formatted. */
+static std::string get_current_filename_without_ext()
+{
+   const std::string filename  = cpd.filename;
+   size_t            start_idx = filename.find_last_of("/\\");
+
+   if (start_idx == std::string::npos)
+   {
+      start_idx = 0;
+   }
+   else
+   {
+      start_idx += 1;
+   }
+
+   if (start_idx >= filename.size())
+   {
+      return(filename);
+   }
+   std::string without_ext = filename.substr(start_idx);
+   size_t      dot_idx     = without_ext.find_last_of('.');
+
+   if (dot_idx != std::string::npos)
+   {
+      without_ext.erase(dot_idx);
+   }
+   return(without_ext);
+}
+
+
+//! Matches the character class the regex '\w' stands for.
+static bool is_regex_word_char(char ch)
+{
+   return(  unc_isalnum(ch)
+         || ch == '_');
+}
+
+
+//! Matches the regex '\b' assertion at the given offset into text.
+static bool has_word_boundary_at(const char *text, size_t pos)
+{
+   const bool before_is_word = (pos > 0) && is_regex_word_char(text[pos - 1]);
+   const bool after_is_word  = (text[pos] != '\0') && is_regex_word_char(text[pos]);
+
+   return(before_is_word != after_is_word);
+}
+
+
+//! Matches the regex 'filename\b.*'.
+static bool matches_filename(const char *text, const std::string &filename)
+{
+   return(  std::strncmp(text, filename.c_str(), filename.size()) == 0
+         && has_word_boundary_at(text, filename.size()));
+}
+
+
+/** Returns true if the text starts with the filename without its extension. */
 static bool text_contains_filename_without_ext(const char *text)
 {
-   std::string filepath             = cpd.filename;
-   size_t      slash_idx            = filepath.find_last_of("/\\");
-   std::string filename_without_ext = filepath;
+   const auto cache_entry = filename_without_ext_cache.find(text);
 
-   if (  slash_idx != std::string::npos
-      && slash_idx < (filepath.size() - 1))
+   if (cache_entry != filename_without_ext_cache.end())
    {
-      std::string filename = filepath.substr(slash_idx + 1);
-      size_t      dot_idx  = filename.find_last_of('.');
-      filename_without_ext = filename.substr(0, dot_idx);
+      return(cache_entry->second);
    }
-   const std::regex  special_chars      = std::regex(R"([-[\]{}()*+?.,\^$|#\s])");
-   const std::string sanitized_filename = std::regex_replace(filename_without_ext, special_chars, R"(\$&)");
-   const std::regex  filename_pattern   = std::regex("\\S?" + sanitized_filename + "\\b.*");
+   const std::string filename_without_ext = get_current_filename_without_ext();
+   const bool        contains_filename    = matches_filename(text, filename_without_ext);
 
-   return(std::regex_match(text, filename_pattern));
+   filename_without_ext_cache[text] = contains_filename;
+   return(contains_filename);
 }
 
 
 /**
  * Get chunk text without the extension.
  */
-static unc_text get_text_without_ext(const unc_text &chunk_text)
+static UncText get_text_without_ext(const UncText &chunk_text)
 {
-   unc_text result = chunk_text;
-   int      idx    = result.rfind(".", result.size() - 1);
+   UncText result = chunk_text;
+   int     idx    = result.rfind(".", result.size() - 1);
 
    if (idx == -1)
    {
@@ -167,9 +227,9 @@ static unc_text get_text_without_ext(const unc_text &chunk_text)
 
 
 /**
- * Returns true if unc_text has "." which implies extension.
+ * Returns true if UncText has "." which implies extension.
  */
-static bool has_dot(const unc_text &chunk_text)
+static bool has_dot(const UncText &chunk_text)
 {
    int idx = chunk_text.rfind(".", chunk_text.size() - 1);
 
@@ -180,13 +240,14 @@ static bool has_dot(const unc_text &chunk_text)
 /**
  * Returns chunk string required for sorting.
  */
-static unc_text chunk_sort_str(Chunk *pc)
+static UncText chunk_sort_str(Chunk const *pc)
 {
-   if (get_chunk_parent_type(pc) == CT_PP_INCLUDE)
+   if (  pc->GetParentType() == E_Token::CT_PP_INCLUDE
+      && pc->Len() >= 2)
    {
-      return(unc_text{ pc->str, 0, pc->Len() - 1 });
+      return(UncText{ pc->GetText(), 1, pc->Len() - 2 });
    }
-   return(pc->str);
+   return(pc->GetText());
 }
 
 
@@ -195,9 +256,9 @@ static int compare_chunks(Chunk *pc1, Chunk *pc2, bool tcare)
 {
    LOG_FUNC_ENTRY();
    LOG_FMT(LSORT, "%s(%d): @begin pc1->len is %zu, line is %zu, column is %zu\n",
-           __func__, __LINE__, pc1->Len(), pc1->orig_line, pc1->orig_col);
+           __func__, __LINE__, pc1->Len(), pc1->GetOrigLine(), pc1->GetOrigCol());
    LOG_FMT(LSORT, "%s(%d): @begin pc2->len is %zu, line is %zu, column is %zu\n",
-           __func__, __LINE__, pc2->Len(), pc2->orig_line, pc2->orig_col);
+           __func__, __LINE__, pc2->Len(), pc2->GetOrigLine(), pc2->GetOrigCol());
 
    if (pc1 == pc2) // same chunk is always identical thus return 0 differences
    {
@@ -217,8 +278,8 @@ static int compare_chunks(Chunk *pc1, Chunk *pc2, bool tcare)
 
       if (options::mod_sort_incl_import_prioritize_filename())
       {
-         bool s1_contains_filename = text_contains_filename_without_ext(s1.c_str());
-         bool s2_contains_filename = text_contains_filename_without_ext(s2.c_str());
+         bool s1_contains_filename = text_contains_filename_without_ext(s1.GetLogText());
+         bool s2_contains_filename = text_contains_filename_without_ext(s2.GetLogText());
 
          if (  s1_contains_filename
             && !s2_contains_filename)
@@ -254,13 +315,13 @@ static int compare_chunks(Chunk *pc1, Chunk *pc2, bool tcare)
       {
          log_rule_B("mod_sort_incl_import_prioritize_angle_over_quotes");
 
-         if (  s1.startswith("<")
-            && s2.startswith("\""))
+         if (  pc1->GetText().startswith("<")
+            && pc2->GetText().startswith("\""))
          {
             return(-1);
          }
-         else if (  s1.startswith("\"")
-                 && s2.startswith("<"))
+         else if (  pc1->GetText().startswith("\"")
+                 && pc2->GetText().startswith("<"))
          {
             return(1);
          }
@@ -272,12 +333,26 @@ static int compare_chunks(Chunk *pc1, Chunk *pc2, bool tcare)
       {
          return(ppc1 - ppc2);
       }
-      LOG_FMT(LSORT, "%s(%d): text is %s, pc1->len is %zu, line is %zu, column is %zu\n",
-              __func__, __LINE__, pc1->Text(), pc1->Len(), pc1->orig_line, pc1->orig_col);
-      LOG_FMT(LSORT, "%s(%d): text is %s, pc2->len is %zu, line is %zu, column is %zu\n",
-              __func__, __LINE__, pc2->Text(), pc2->Len(), pc2->orig_line, pc2->orig_col);
 
-      int ret_val = unc_text::compare(s1, s2, std::min(s1.size(), s2.size()), tcare);
+      // Preserve the existing ordering between quoted and angled includes.
+      // The sort key itself omits those delimiters so filename matching can
+      // operate on the include target directly.
+      if (  pc1->GetParentType() == E_Token::CT_PP_INCLUDE
+         || pc2->GetParentType() == E_Token::CT_PP_INCLUDE)
+      {
+         const int delimiter_cmp = UncText::compare(pc1->GetText(), pc2->GetText(), 1, tcare);
+
+         if (delimiter_cmp != 0)
+         {
+            return(delimiter_cmp);
+         }
+      }
+      LOG_FMT(LSORT, "%s(%d): text is %s, pc1->len is %zu, line is %zu, column is %zu\n",
+              __func__, __LINE__, pc1->GetLogText(), pc1->Len(), pc1->GetOrigLine(), pc1->GetOrigCol());
+      LOG_FMT(LSORT, "%s(%d): text is %s, pc2->len is %zu, line is %zu, column is %zu\n",
+              __func__, __LINE__, pc2->GetLogText(), pc2->Len(), pc2->GetOrigLine(), pc2->GetOrigCol());
+
+      int ret_val = UncText::compare(s1, s2, std::min(s1.size(), s2.size()), tcare);
       LOG_FMT(LSORT, "%s(%d): ret_val is %d\n",
               __func__, __LINE__, ret_val);
 
@@ -293,46 +368,46 @@ static int compare_chunks(Chunk *pc1, Chunk *pc2, bool tcare)
       // Same word, same length. Step to the next chunk.
       pc1 = pc1->GetNext();
       LOG_FMT(LSORT, "%s(%d): text is %s, pc1->len is %zu, line is %zu, column is %zu\n",
-              __func__, __LINE__, pc1->Text(), pc1->Len(), pc1->orig_line, pc1->orig_col);
+              __func__, __LINE__, pc1->GetLogText(), pc1->Len(), pc1->GetOrigLine(), pc1->GetOrigCol());
 
-      if (chunk_is_token(pc1, CT_MEMBER))
+      if (pc1->Is(E_Token::CT_MEMBER))
       {
          pc1 = pc1->GetNext();
          LOG_FMT(LSORT, "%s(%d): text is %s, pc1->len is %zu, line is %zu, column is %zu\n",
-                 __func__, __LINE__, pc1->Text(), pc1->Len(), pc1->orig_line, pc1->orig_col);
+                 __func__, __LINE__, pc1->GetLogText(), pc1->Len(), pc1->GetOrigLine(), pc1->GetOrigCol());
       }
       pc2 = pc2->GetNext();
       LOG_FMT(LSORT, "%s(%d): text is %s, pc2->len is %zu, line is %zu, column is %zu\n",
-              __func__, __LINE__, pc2->Text(), pc2->Len(), pc2->orig_line, pc2->orig_col);
+              __func__, __LINE__, pc2->GetLogText(), pc2->Len(), pc2->GetOrigLine(), pc2->GetOrigCol());
 
-      if (chunk_is_token(pc2, CT_MEMBER))
+      if (pc2->Is(E_Token::CT_MEMBER))
       {
          pc2 = pc2->GetNext();
          LOG_FMT(LSORT, "%s(%d): text is %s, pc2->len is %zu, line is %zu, column is %zu\n",
-                 __func__, __LINE__, pc2->Text(), pc2->Len(), pc2->orig_line, pc2->orig_col);
+                 __func__, __LINE__, pc2->GetLogText(), pc2->Len(), pc2->GetOrigLine(), pc2->GetOrigCol());
       }
       LOG_FMT(LSORT, "%s(%d): >>>text is %s, pc1->len is %zu, line is %zu, column is %zu\n",
-              __func__, __LINE__, pc1->Text(), pc1->Len(), pc1->orig_line, pc1->orig_col);
+              __func__, __LINE__, pc1->GetLogText(), pc1->Len(), pc1->GetOrigLine(), pc1->GetOrigCol());
       LOG_FMT(LSORT, "%s(%d): >>>text is %s, pc2->len is %zu, line is %zu, column is %zu\n",
-              __func__, __LINE__, pc2->Text(), pc2->Len(), pc2->orig_line, pc2->orig_col);
+              __func__, __LINE__, pc2->GetLogText(), pc2->Len(), pc2->GetOrigLine(), pc2->GetOrigCol());
 
-      // If we hit a newline or nullptr, we are done
+      // If we hit a newline or null chuck, we are done
       if (  pc1->IsNullChunk()
-         || chunk_is_newline(pc1)
+         || pc1->IsNewline()
          || pc2->IsNullChunk()
-         || chunk_is_newline(pc2))
+         || pc2->IsNewline())
       {
          break;
       }
    }
 
    if (  pc1->IsNullChunk()
-      || !chunk_is_newline(pc2))
+      || !pc2->IsNewline())
    {
       return(-1);
    }
 
-   if (!chunk_is_newline(pc1))
+   if (!pc1->IsNewline())
    {
       return(1);
    }
@@ -341,9 +416,7 @@ static int compare_chunks(Chunk *pc1, Chunk *pc2, bool tcare)
 
 
 /**
- * Sorting should be pretty rare and should usually only include a few chunks.
- * We need to minimize the number of swaps, as those are expensive.
- * So, we do a min sort.
+ * Sort all of the chunks in O(n log n) time with a maximum of O(n) swaps
  */
 static void do_the_sort(Chunk **chunks, size_t num_chunks)
 {
@@ -354,46 +427,44 @@ static void do_the_sort(Chunk **chunks, size_t num_chunks)
 
    for (size_t idx = 0; idx < num_chunks; idx++)
    {
-      LOG_FMT(LSORT, " [%s]", chunks[idx]->Text());
+      LOG_FMT(LSORT, " [%s]", chunks[idx]->GetLogText());
    }
 
    LOG_FMT(LSORT, "\n");
 
-   size_t start_idx;
-
    log_rule_B("mod_sort_case_sensitive");
    bool take_care = options::mod_sort_case_sensitive();                    // Issue #2091
 
-   for (start_idx = 0; start_idx < (num_chunks - 1); start_idx++)
+   // Sort an array of the chunk positions in order to minimize the number of swaps
+   std::vector<size_t> chunk_positions(num_chunks);
+
+   for (size_t idx = 0; idx < num_chunks; idx++)
    {
-      // Find the index of the minimum value
-      size_t min_idx = start_idx;
+      chunk_positions[idx] = idx;
+   }
 
-      for (size_t idx = start_idx + 1; idx < num_chunks; idx++)
-      {
-         if (compare_chunks(chunks[idx], chunks[min_idx], take_care) < 0)  // Issue #2091
-         {
-            min_idx = idx;
-         }
-      }
+   sort(chunk_positions.begin(), chunk_positions.end(), [chunks, take_care](const size_t &l, const size_t &r) {
+      return(compare_chunks(chunks[l], chunks[r], take_care) < 0);
+   });
 
-      // Swap the lines if the minimum isn't the first entry
-      if (min_idx != start_idx)
+   // Swap the chunk positions
+   for (size_t idx = 0; idx < num_chunks; idx++)
+   {
+      if (chunk_positions[idx] != idx)
       {
-         chunk_swap_lines(chunks[start_idx], chunks[min_idx]);
          log_rule_B("mod_sort_incl_import_grouping_enabled");
 
-         if (options::mod_sort_incl_import_grouping_enabled())
-         {
-            Chunk *pc = chunks[min_idx];
-            chunks[min_idx]   = chunks[start_idx];
-            chunks[start_idx] = pc;
-         }
-         else
-         {
-            // Don't need to swap, since we only want the side-effects
-            chunks[min_idx] = chunks[start_idx];
-         }
+         const size_t from = chunk_positions[idx];
+         const size_t to   = chunk_positions[from];
+         chunks[from]->SwapLines(chunks[to]);
+
+         Chunk *pc = chunks[from];
+         chunks[from] = chunks[to];
+         chunks[to]   = pc;
+
+         chunk_positions[from] = from;
+         chunk_positions[idx]  = to;
+         idx--;
       }
    }
 } // do_the_sort
@@ -414,7 +485,7 @@ static void remove_blank_lines_between_imports(Chunk **chunks, size_t num_chunks
    for (size_t idx = 0; idx < (num_chunks - 1); idx++)
    {
       Chunk *chunk1 = chunks[idx]->GetNextNl();
-      chunk1->nl_count = 1;
+      chunk1->SetNlCount(1);
       MARK_CHANGE();
    }
 }
@@ -423,28 +494,27 @@ static void remove_blank_lines_between_imports(Chunk **chunks, size_t num_chunks
 /**
  * Delete chunks on line having chunk.
  */
-static void delete_chunks_on_line_having_chunk(Chunk *chunk)
+static void delete_chunks_on_line_having_chunk(Chunk const *chunk)
 {
    LOG_FUNC_ENTRY();
 
-   Chunk *pc = chunk_first_on_line(chunk);
+   Chunk *pc = chunk->GetFirstChunkOnLine();
 
-   while (  pc != nullptr
-         && pc->IsNotNullChunk()
+   while (  pc->IsNotNullChunk()
          && !pc->IsComment())
    {
       Chunk *next_pc = pc->GetNext();
-      LOG_FMT(LCHUNK, "%s(%d): Removed '%s' on orig_line %zu\n",
-              __func__, __LINE__, pc->Text(), pc->orig_line);
+      LOG_FMT(LCHUNK, "%s(%d): Removed '%s' on orig line %zu\n",
+              __func__, __LINE__, pc->GetLogText(), pc->GetOrigLine());
 
-      if (chunk_is_newline(pc))
+      if (pc->IsNewline())
       {
-         chunk_del(pc);
+         Chunk::Delete(pc);
          break;
       }
       else
       {
-         chunk_del(pc);
+         Chunk::Delete(pc);
       }
       pc = next_pc;
    }
@@ -461,14 +531,14 @@ static void dedupe_imports(Chunk **chunks, size_t num_chunks)
 
    for (size_t idx = 1; idx < num_chunks; idx++)
    {
-      auto const &s1 = chunk_sort_str(chunks[idx - 1]);
-      auto const &s2 = chunk_sort_str(chunks[idx]);
+      auto const &s1 = chunks[idx - 1]->GetText();
+      auto const &s2 = chunks[idx]->GetText();
 
       if (s1.size() != s2.size())
       {
          continue;
       }
-      int ret_val = unc_text::compare(s1, s2, std::min(s1.size(), s2.size()), options::mod_sort_case_sensitive());
+      int ret_val = UncText::compare(s1, s2, std::min(s1.size(), s2.size()), options::mod_sort_case_sensitive());
 
       if (ret_val == 0)
       {
@@ -481,11 +551,11 @@ static void dedupe_imports(Chunk **chunks, size_t num_chunks)
 /**
  * Add blank line before the chunk.
  */
-static void blankline_add_before(Chunk *pc)
+static void blankline_add_before(Chunk const *pc)
 {
-   Chunk *newline = newline_add_before(chunk_first_on_line(pc));
+   Chunk *newline = newline_add_before(pc->GetFirstChunkOnLine());
 
-   if (newline->nl_count < 2)
+   if (newline->GetNlCount() < 2)
    {
       double_newline(newline);
    }
@@ -500,14 +570,14 @@ static void group_imports_by_adding_newlines(Chunk **chunks, size_t num_chunks)
    LOG_FUNC_ENTRY();
 
    // Group imports based on first character, typically quote or angle.
-   int c_idx      = -1;
+   int c_idx;
    int c_idx_last = -1;
 
    for (size_t idx = 0; idx < num_chunks; idx++)
    {
-      if (chunks[idx]->str.size() > 0)
+      if (chunks[idx]->GetText().size() > 0)
       {
-         c_idx = chunks[idx]->str.at(0);
+         c_idx = chunks[idx]->GetText().at(0);
       }
       else
       {
@@ -523,12 +593,11 @@ static void group_imports_by_adding_newlines(Chunk **chunks, size_t num_chunks)
    }
 
    // Group imports based on having extension.
-   bool chunk_has_dot      = false;
    bool chunk_last_has_dot = false;
 
    for (size_t idx = 0; idx < num_chunks; idx++)
    {
-      chunk_has_dot = has_dot(chunks[idx]->str);
+      bool chunk_has_dot = has_dot(chunks[idx]->GetText());
 
       if (  chunk_last_has_dot != chunk_has_dot
          && idx > 0)
@@ -539,12 +608,11 @@ static void group_imports_by_adding_newlines(Chunk **chunks, size_t num_chunks)
    }
 
    // Group imports based on priority defined by config.
-   int chunk_pri      = -1;
    int chunk_pri_last = -1;
 
    for (size_t idx = 0; idx < num_chunks; idx++)
    {
-      chunk_pri = get_chunk_priority(chunks[idx]);
+      int chunk_pri = get_chunk_priority(chunks[idx]);
 
       if (  chunk_pri_last != chunk_pri
          && idx > 0)
@@ -555,13 +623,12 @@ static void group_imports_by_adding_newlines(Chunk **chunks, size_t num_chunks)
    }
 
    // Group imports that contain filename pattern.
-   bool chunk_has_filename      = false;
    bool last_chunk_has_filename = false;
 
    for (size_t idx = 0; idx < num_chunks; idx++)
    {
-      auto const &chunk_text = chunk_sort_str(chunks[idx]);
-      chunk_has_filename = text_contains_filename_without_ext(chunk_text.c_str());
+      auto const &chunk_text        = chunk_sort_str(chunks[idx]);
+      bool       chunk_has_filename = text_contains_filename_without_ext(chunk_text.GetLogText());
 
       if (  !chunk_has_filename
          && last_chunk_has_filename)
@@ -573,18 +640,18 @@ static void group_imports_by_adding_newlines(Chunk **chunks, size_t num_chunks)
 } // group_imports_by_adding_newlines
 
 
-void sort_imports(void)
+void sort_imports()
 {
    LOG_FUNC_ENTRY();
-   const int max_number_to_sort                        = 1024;
-   const int max_lines_to_check_for_sort_after_include = 128;
-   const int max_gap_threshold_between_include_to_sort = 32;
+   const int   max_number_to_sort                        = 1024;
+   const int   max_lines_to_check_for_sort_after_include = 128;
+   const int   max_gap_threshold_between_include_to_sort = 32;
 
-   Chunk     *chunks[max_number_to_sort];
-   size_t    num_chunks  = 0;
-   Chunk     *p_last     = nullptr;
-   Chunk     *p_imp      = nullptr;
-   Chunk     *p_imp_last = nullptr;
+   Chunk       *chunks[max_number_to_sort];
+   size_t      num_chunks  = 0;
+   Chunk const *p_last     = Chunk::NullChunkPtr;
+   Chunk       *p_imp      = Chunk::NullChunkPtr;
+   Chunk const *p_imp_last = Chunk::NullChunkPtr;
 
    prepare_categories();
 
@@ -597,27 +664,25 @@ void sort_imports(void)
       // Simple optimization to limit the sorting. Any MAX_LINES_TO_CHECK_AFTER_INCLUDE lines after last
       // import is seen are ignore from sorting.
       if (  options::mod_sort_incl_import_grouping_enabled()
-         && p_imp_last != nullptr
-         && (pc->orig_line - p_imp_last->orig_line) > max_lines_to_check_for_sort_after_include)
+         && p_imp_last->IsNotNullChunk()
+         && (pc->GetOrigLine() - p_imp_last->GetOrigLine()) > max_lines_to_check_for_sort_after_include)
       {
          break;
       }
       Chunk *next = pc->GetNext();
 
-      if (chunk_is_newline(pc))
+      if (pc->IsNewline())
       {
          bool did_import = false;
 
-         if (  p_imp != nullptr
-            && p_imp->IsNotNullChunk()
-            && p_last != nullptr
-            && (  chunk_is_token(p_last, CT_SEMICOLON)
-               || p_imp->flags.test(PCF_IN_PREPROC)))
+         if (  p_imp->IsNotNullChunk()
+            && (  p_last->Is(E_Token::CT_SEMICOLON)
+               || p_imp->TestFlags(PCF_IN_PREPROC)))
          {
             if (num_chunks < max_number_to_sort)
             {
                LOG_FMT(LSORT, "%s(%d): p_imp is %s\n",
-                       __func__, __LINE__, p_imp->Text());
+                       __func__, __LINE__, p_imp->GetLogText());
                chunks[num_chunks++] = p_imp;
             }
             else
@@ -625,8 +690,7 @@ void sort_imports(void)
                fprintf(stderr, "Number of 'import' to be sorted is too big for the current value %d.\n", max_number_to_sort);
                fprintf(stderr, "Please make a report.\n");
                log_flush(true);
-               cpd.error_count++;
-               exit(2);
+               exit(EX_SOFTWARE);
             }
             did_import = true;
          }
@@ -634,10 +698,10 @@ void sort_imports(void)
 
          if (  !did_import
             || (  !options::mod_sort_incl_import_grouping_enabled()
-               && pc->nl_count > 1)
+               && pc->GetNlCount() > 1)
             || (  options::mod_sort_incl_import_grouping_enabled()
-               && p_imp_last != nullptr
-               && (pc->orig_line - p_imp_last->orig_line) > max_gap_threshold_between_include_to_sort)
+               && p_imp_last->IsNotNullChunk()
+               && (pc->GetOrigLine() - p_imp_last->GetOrigLine()) > max_gap_threshold_between_include_to_sort)
             || next->IsNullChunk())
          {
             if (num_chunks > 1)
@@ -659,10 +723,10 @@ void sort_imports(void)
             num_chunks = 0;
          }
          p_imp_last = p_imp;
-         p_imp      = nullptr;
-         p_last     = nullptr;
+         p_imp      = Chunk::NullChunkPtr;
+         p_last     = Chunk::NullChunkPtr;
       }
-      else if (chunk_is_token(pc, CT_IMPORT))
+      else if (pc->Is(E_Token::CT_IMPORT))
       {
          log_rule_B("mod_sort_import");
 
@@ -671,7 +735,7 @@ void sort_imports(void)
             p_imp = pc->GetNext();
          }
       }
-      else if (chunk_is_token(pc, CT_USING))
+      else if (pc->Is(E_Token::CT_USING))
       {
          log_rule_B("mod_sort_using");
 
@@ -680,7 +744,7 @@ void sort_imports(void)
             p_imp = pc->GetNext();
          }
       }
-      else if (chunk_is_token(pc, CT_PP_INCLUDE))
+      else if (pc->Is(E_Token::CT_PP_INCLUDE))
       {
          log_rule_B("mod_sort_include");
 

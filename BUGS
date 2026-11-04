@@ -48,7 +48,7 @@ Here is what I do when I get a bug report.
    $ uncrustify -c bug.cfg -f bug.c
    $ gdb uncrustify core
 
-3. Formatting bugs usually land in one of three catagories.
+3. Formatting bugs usually land in one of three categories.
    a. Incorrectly labeled chunks
    b. Bad formatting logic or unexpected input
    c. Missing options
@@ -64,4 +64,3 @@ otherwise processed.
 I also selectively turn on log levels (the -L command line option) to aid
 debugging of specific areas of interest.
 Don't turn on all log levels -- the result is excessive and not at all helpful.
-

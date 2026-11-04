@@ -123,19 +123,19 @@ void output_parsed(FILE *pfile)
    for (pc = Chunk::GetHead(); pc != NULL; pc = pc->GetNext())
    {
       fprintf(pfile, "\n%3d> %13.13s[%13.13s][%2d/%2d/%2d][%d/%d/%d][%6x][%d-%d]",
-              pc->orig_line, get_token_name(pc->type),
-              get_token_name(pc->parent_type),
-              pc->column, pc->orig_col, pc->orig_col_end,
-              pc->brace_level, pc->level, pc->pp_level,
-              pc->flags, pc->nl_count, pc->after_tab);
+              pc->GetOrigLine(), get_token_name(pc->GetType()),
+              get_token_name(pc->GetParentType()),
+              pc->GetColumn(), pc->GetOrigCol(), pc->GetOrigColEnd(),
+              pc->GetBraceLevel(), pc->GetLevel(), pc->GetPpLevel(),
+              pc->GetFlags(), pc->GetNlCount(), pc->GetAfterTab());
 
-      if ((pc->type != CT_NEWLINE) && (pc->len != 0))
+      if ((pc->GetType() != CT_NEWLINE) && (pc->len != 0))
       {
-         for (cnt = 0; cnt < pc->column; cnt++)
+         for (cnt = 0; cnt < pc->GetColumn(); cnt++)
          {
             fprintf(pfile, " ");
          }
-         fprintf(pfile, "%.*s", pc->len, pc->str);
+         fprintf(pfile, "%.*s", pc->len, pc->GetStr());
       }
    }
    fprintf(pfile, "\n-=====-\n");
@@ -153,13 +153,13 @@ void output_options(FILE *pfile)
       ptr = get_option_name(idx);
       if (ptr != NULL)
       {
-         if (ptr->type == AT_BOOL)
+         if (ptr->GetType() == AT_BOOL)
          {
             fprintf(pfile, "%3d) %32s = %s\n",
                     ptr->id, ptr->name,
                     cpd.settings[ptr->id].b ? "True" : "False");
          }
-         else if (ptr->type == AT_IARF)
+         else if (ptr->GetType() == AT_IARF)
          {
             fprintf(pfile, "%3d) %32s = %s\n",
                     ptr->id, ptr->name,
@@ -167,7 +167,7 @@ void output_options(FILE *pfile)
                     (cpd.settings[ptr->id].a == AV_REMOVE) ? "Remove" :
                     (cpd.settings[ptr->id].a == AV_FORCE) ? "Force" : "Ignore");
          }
-         else if (ptr->type == AT_LINE)
+         else if (ptr->GetType() == AT_LINE)
          {
             fprintf(pfile, "%3d) %32s = %s\n",
                     ptr->id, ptr->name,
@@ -200,9 +200,9 @@ void output_text(FILE *pfile)
 
    for (pc = Chunk::GetHead(); pc != NULL; pc = pc->GetNext())
    {
-      if (pc->type == CT_NEWLINE)
+      if (pc->GetType() == CT_NEWLINE)
       {
-         for (cnt = 0; cnt < pc->nl_count; cnt++)
+         for (cnt = 0; cnt < pc->GetNlCount(); cnt++)
          {
             add_char('\n');
          }
@@ -210,18 +210,18 @@ void output_text(FILE *pfile)
          cpd.column      = 1;
          LOG_FMT(LOUTIND, " xx\n");
       }
-      else if (pc->type == CT_COMMENT_MULTI)
+      else if (pc->GetType() == CT_COMMENT_MULTI)
       {
          output_comment_multi(pc);
       }
-      else if (pc->type == CT_COMMENT_CPP)
+      else if (pc->GetType() == CT_COMMENT_CPP)
       {
          pc = output_comment_cpp(pc);
       }
       else if (pc->len == 0)
       {
          /* don't do anything for non-visible stuff */
-         LOG_FMT(LOUTIND, " <%d> -", pc->column);
+         LOG_FMT(LOUTIND, " <%d> -", pc->GetColumn());
       }
       else
       {
@@ -230,46 +230,46 @@ void output_text(FILE *pfile)
          {
             if (cpd.settings[UO_indent_with_tabs].n == 1)
             {
-               lvlcol = 1 + (pc->brace_level * cpd.settings[UO_indent_columns].n);
-               if ((pc->column >= lvlcol) && (lvlcol > 1))
+               lvlcol = 1 + (pc->GetBraceLevel() * cpd.settings[UO_indent_columns].n);
+               if ((pc->GetColumn() >= lvlcol) && (lvlcol > 1))
                {
                   output_to_column(lvlcol, true);
                }
             }
             allow_tabs = (cpd.settings[UO_indent_with_tabs].n == 2) ||
-                         (chunk_is_comment(pc) &&
+                         (pc->IsComment() &&
                           (cpd.settings[UO_indent_with_tabs].n != 0));
 
-            LOG_FMT(LOUTIND, "  %d> col %d/%d - ", pc->orig_line, pc->column, cpd.column);
+            LOG_FMT(LOUTIND, "  %d> col %d/%d - ", pc->GetOrigLine(), pc->GetColumn(), cpd.column);
          }
          else
          {
             /* not the first item on a line */
             if (cpd.settings[UO_align_keep_tabs].b)
             {
-               allow_tabs = pc->after_tab;
+               allow_tabs = pc->GetAfterTab();
             }
             else
             {
                prev       = pc->GetPrev();
                allow_tabs = (cpd.settings[UO_align_with_tabs].b &&
-                             ((pc->flags & PCF_WAS_ALIGNED) != 0) &&
-                             (((pc->column - 1) % cpd.settings[UO_output_tab_size].n) == 0) &&
-                             ((prev->column + prev->len + 1) != pc->column));
+                             ((pc->GetFlags() & PCF_WAS_ALIGNED) != 0) &&
+                             (((pc->GetColumn() - 1) % cpd.settings[UO_output_tab_size].n) == 0) &&
+                             ((prev->GetColumn() + prev->len + 1) != pc->GetColumn()));
             }
-            LOG_FMT(LOUTIND, " %d -", pc->column);
+            LOG_FMT(LOUTIND, " %d -", pc->GetColumn());
          }
 
-         output_to_column(pc->column, allow_tabs);
-         add_text_len(pc->str, pc->len);
-         cpd.did_newline = chunk_is_newline(pc);
+         output_to_column(pc->GetColumn(), allow_tabs);
+         add_text_len(pc->GetStr(), pc->len);
+         cpd.did_newline = pc->IsNewline();
       }
    }
 }
 
 
 /**
- * Given a multi-line comemnt block that starts in column X, figure out how
+ * Given a multi-line comment block that starts in column X, figure out how
  * much subsequent lines should be indented.
  *
  * The answer is either 0 or 1.
@@ -387,16 +387,16 @@ static int calculate_comment_body_indent(const char *str, int len, int start_col
  */
 Chunk *output_comment_cpp(Chunk *first)
 {
-   int col    = first->column;
-   int col_br = 1 + (first->brace_level * cpd.settings[UO_indent_columns].n);
+   int col    = first->GetColumn();
+   int col_br = 1 + (first->GetBraceLevel() * cpd.settings[UO_indent_columns].n);
 
    /* Make sure we have at least one space past the last token */
-   if (first->parent_type == CT_COMMENT_END)
+   if (first->GetParentType() == CT_COMMENT_END)
    {
       Chunk *prev = first->GetPrev();
       if (prev != NULL)
       {
-         int col_min = prev->column + prev->len + 1;
+         int col_min = prev->GetColumn() + prev->len + 1;
          if (col < col_min)
          {
             col = col_min;
@@ -409,7 +409,7 @@ Chunk *output_comment_cpp(Chunk *first)
 
    if (!cpd.settings[UO_cmt_cpp_to_c].b)
    {
-      add_text_len(first->str, first->len);
+      add_text_len(first->GetStr(), first->len);
       return(first);
    }
 
@@ -419,7 +419,7 @@ Chunk *output_comment_cpp(Chunk *first)
    {
       /* next is a newline by definition */
       Chunk *next = first->GetNext();
-      if ((next != NULL) && (next->nl_count == 1))
+      if ((next != NULL) && (next->GetNlCount() == 1))
       {
          next = next->GetNext();
 
@@ -431,10 +431,10 @@ Chunk *output_comment_cpp(Chunk *first)
           * level or less
           */
          if ((next != NULL) &&
-             (next->type == CT_COMMENT_CPP) &&
-             (((next->column == 1) && (first->column == 1)) ||
-              ((next->column == col_br) && (first->column == col_br)) ||
-              ((next->column > col_br) && (first->parent_type == CT_COMMENT_END))))
+             (next->GetType() == CT_COMMENT_CPP) &&
+             (((next->GetColumn() == 1) && (first->GetColumn() == 1)) ||
+              ((next->GetColumn() == col_br) && (first->GetColumn() == col_br)) ||
+              ((next->GetColumn() > col_br) && (first->GetParentType() == CT_COMMENT_END))))
          {
             combined = true;
          }
@@ -445,11 +445,11 @@ Chunk *output_comment_cpp(Chunk *first)
    {
       /* nothing to group: just output a single line */
       add_text_len("/*", 2);
-      if ((first->str[2] != ' ') && (first->str[2] != '\t'))
+      if ((first->GetStr()[2] != ' ') && (first->GetStr()[2] != '\t'))
       {
          add_char(' ');
       }
-      add_text_len(&first->str[2], first->len - 2);
+      add_text_len(&first->GetStr()[2], first->len - 2);
       add_text_len(" */", 3);
       return(first);
    }
@@ -471,17 +471,17 @@ Chunk *output_comment_cpp(Chunk *first)
    /* Output combined lines */
    while ((pc = pc->GetNext()) != NULL)
    {
-      if ((pc->type == CT_NEWLINE) && (pc->nl_count == 1))
+      if ((pc->GetType() == CT_NEWLINE) && (pc->GetNlCount() == 1))
       {
          continue;
       }
-      if (pc->type != CT_COMMENT_CPP)
+      if (pc->GetType() != CT_COMMENT_CPP)
       {
          break;
       }
-      if (((pc->column == 1) && (first->column == 1)) ||
-          ((pc->column == col_br) && (first->column == col_br)) ||
-          ((pc->column > col_br) && (first->parent_type == CT_COMMENT_END)))
+      if (((pc->GetColumn() == 1) && (first->GetColumn() == 1)) ||
+          ((pc->GetColumn() == col_br) && (first->GetColumn() == col_br)) ||
+          ((pc->GetColumn() > col_br) && (first->GetParentType() == CT_COMMENT_END)))
       {
          last = pc;
 cpp_newline:
@@ -490,11 +490,11 @@ cpp_newline:
          add_char(' ');
          add_char(cpd.settings[UO_cmt_star_cont].b ? '*' : ' ');
 cpp_addline:
-         if ((pc->str[2] != ' ') && (pc->str[2] != '\t'))
+         if ((pc->GetStr()[2] != ' ') && (pc->GetStr()[2] != '\t'))
          {
             add_char(' ');
          }
-         add_text_len(&pc->str[2], pc->len - 2);
+         add_text_len(&pc->GetStr()[2], pc->len - 2);
       }
    }
 
@@ -509,7 +509,7 @@ cpp_addline:
 
 void output_comment_multi(Chunk *pc)
 {
-   int        cmt_col = pc->column;
+   int        cmt_col = pc->GetColumn();
    const char *cmt_str;
    int        remaining;
    char       ch;
@@ -522,23 +522,23 @@ void output_comment_multi(Chunk *pc)
    int        xtra     = 1;
 
    prev = pc->GetPrev();
-   if ((prev != NULL) && (prev->type != CT_NEWLINE))
+   if ((prev != NULL) && (prev->GetType() != CT_NEWLINE))
    {
-      cmt_col = pc->orig_col;
+      cmt_col = pc->GetOrigCol();
    }
    else
    {
-      col_diff = pc->orig_col - pc->column;
+      col_diff = pc->GetOrigCol() - pc->GetColumn();
    }
 
    //   fprintf(stderr, "Indenting1 line %d to col %d (orig=%d) col_diff=%d\n",
-   //           pc->orig_line, cmt_col, pc->orig_col, col_diff);
+   //           pc->GetOrigLine(), cmt_col, pc->GetOrigCol(), col_diff);
 
-   xtra = calculate_comment_body_indent(pc->str, pc->len, pc->column);
+   xtra = calculate_comment_body_indent(pc->GetStr(), pc->len, pc->GetColumn());
 
    ccol      = 1;
    remaining = pc->len;
-   cmt_str   = pc->str;
+   cmt_str   = pc->GetStr();
    line_len  = 0;
    while (remaining > 0)
    {
@@ -618,7 +618,7 @@ void output_comment_multi(Chunk *pc)
 
             if (line[0] == '\n')
             {
-               /* Emtpy line - just a '\n' */
+               /* Empty line - just a '\n' */
                if (cpd.settings[UO_cmt_star_cont].b)
                {
                   output_to_column(cmt_col, cpd.settings[UO_indent_with_tabs].b);

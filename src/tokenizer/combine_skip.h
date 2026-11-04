@@ -1,0 +1,159 @@
+/**
+ * @file combine_skip.h
+ *
+ * @author  Guy Maurel
+ * @license GPL v2+
+ */
+
+#ifndef TOKENIZER_COMBINE_SKIP_H_INCLUDED
+#define TOKENIZER_COMBINE_SKIP_H_INCLUDED
+
+class Chunk;
+
+
+/**
+ * Skips the D 'align()' statement and the colon, if present.
+ *    align(2) int foo;  -- returns 'int'
+ *    align(4):          -- returns 'int'
+ *    int bar;
+ */
+Chunk *skip_align(Chunk *start);
+
+
+/**
+ * Skips chunks in the forward direction and attempts to find the
+ * chunk associated with the end of the current expression; returns
+ * the first chunk to satisfy one of the following:
+ * 1) Chunk is a comma or semicolon at the level of the starting chunk
+ * 2) Preceding chunk is at higher template nest level relative to the
+ *    current chunk under test
+ */
+Chunk *skip_expression(Chunk *pc);
+
+
+/**
+ * Skips chunks in the reverse direction and attempts to find the
+ * chunk associated with the start of the current expression; returns
+ * the first chunk to satisfy one of the following:
+ * 1) Chunk is a comma or semicolon at the level of the starting chunk
+ * 2) Preceding chunk is at lower template nest level relative to the
+ *    current chunk under test
+ */
+Chunk *skip_expression_rev(Chunk *pc);
+
+
+/**
+ * Skips chunks in the forward direction and attempts to find the
+ * chunk associated with the end of the current expression; specifically,
+ * the function returns that which immediately precedes a chunk
+ * satisfying one of the following:
+ * 1) Next chunk is a comma or semicolon at the level of the starting chunk
+ * 2) Preceding chunk is at a higher template nest level relative to the
+ *    subsequent chunk
+ */
+Chunk *skip_to_expression_end(Chunk *pc);
+
+
+/**
+ * Skips chunks in the reverse direction and attempts to find the chunk
+ * associated with the start of the current expression; specifically,
+ * the function returns that which immediately follows a chunk
+ * satisfying one of the following:
+ * 1) Prior chunk is a comma or semicolon at the level of the starting chunk
+ * 2) Preceding chunk is at a lower template nest level relative to the
+ *    subsequent chunk
+ */
+Chunk *skip_to_expression_start(Chunk *pc);
+
+
+/**
+ * Skips over the rest of the template if ang_open is indeed a E_Token::CT_ANGLE_OPEN.
+ * Points to the chunk after the E_Token::CT_ANGLE_CLOSE.
+ * If the chunk isn't an E_Token::CT_ANGLE_OPEN, then it is returned.
+ */
+Chunk *skip_template_next(Chunk *ang_open);
+
+
+/**
+ * Skips over the rest of the template if ang_close is indeed a E_Token::CT_ANGLE_CLOSE.
+ * Points to the chunk before the E_Token::CT_ANGLE_OPEN
+ * If the chunk isn't an E_Token::CT_ANGLE_CLOSE, then it is returned.
+ */
+Chunk *skip_template_prev(Chunk *ang_close);
+
+
+//! Skips to the start of the next statement.
+Chunk *skip_to_next_statement(Chunk *pc);
+
+
+/**
+ * Skips the rest of the array definitions if ary_def is indeed a
+ * E_Token::CT_TSQUARE or E_Token::CT_SQUARE_OPEN
+ */
+Chunk *skip_tsquare_next(Chunk *ary_def);
+
+
+/**
+ * If pc is E_Token::CT_ATTRIBUTE, then skip it and everything preceding the closing
+ * paren; return the chunk marked E_Token::CT_FPAREN_CLOSE
+ * If the chunk isn't a E_Token::CT_ATTRIBUTE, then it is returned.
+ */
+Chunk *skip_attribute(Chunk *attr);
+
+
+/**
+ * If attr is E_Token::CT_ATTRIBUTE, then skip it and the parens and return the chunk
+ * after the E_Token::CT_FPAREN_CLOSE.
+ * If the chunk isn't an E_Token::CT_ATTRIBUTE, then it is returned.
+ */
+Chunk *skip_attribute_next(Chunk *attr);
+
+
+/**
+ * If fp_close is a E_Token::CT_FPAREN_CLOSE with a parent of E_Token::CT_ATTRIBUTE, then skip it
+ * and the '__attribute__' thingy and return the chunk before E_Token::CT_ATTRIBUTE.
+ * Otherwise return fp_close.
+ */
+Chunk *skip_attribute_prev(Chunk *fp_close);
+
+
+/**
+ * If pc is E_Token::CT_DECLSPEC, then skip it and everything preceding the closing
+ * paren; return the chunk marked E_Token::CT_FPAREN_CLOSE
+ * If the chunk isn't a E_Token::CT_DECLSPEC, then it is returned.
+ */
+Chunk *skip_declspec(Chunk *pc);
+
+
+/**
+ * If pc is E_Token::CT_DECLSPEC, then skip it and the parens and return the chunk
+ * after the E_Token::CT_FPAREN_CLOSE.
+ * If the chunk isn't a E_Token::CT_DECLSPEC, then it is returned.
+ */
+Chunk *skip_declspec_next(Chunk *pc);
+
+
+/**
+ * Skips a run of attribute-like prefixes, in any order and any number:
+ *   - E_Token::CT_ATTRIBUTE ('[[...]]', '__attribute__((...))', '__unused', ...)
+ *   - E_Token::CT_DECLSPEC  ('__declspec(...)')
+ *   - 'alignas(...)' / '_Alignas(...)'
+ * and returns the first chunk after the run.
+ * If pc doesn't start such a prefix, then it is returned.
+ *
+ * This deliberately does NOT skip qualifiers, storage class specifiers,
+ * unknown macro words or type words: those belong to the declaration proper.
+ */
+Chunk *skip_attr_prefix(Chunk *pc);
+
+
+/**
+ * Backward counterpart of skip_attr_prefix(): if last is the final chunk of an
+ * attribute-like prefix (see skip_attr_prefix()), then walk back over the whole
+ * run of such prefixes and return its first chunk.
+ * If last doesn't end such a prefix, then it is returned.
+ */
+Chunk *skip_attr_prefix_prev(Chunk *last);
+
+
+#endif /* TOKENIZER_COMBINE_SKIP_H_INCLUDED */

@@ -14,7 +14,7 @@
 #include "prototypes.h"
 #include "unc_ctype.h"
 #include "uncrustify.h"
-#include "uncrustify_version.h"
+#include "uncrustify_version.h"   // cppcheck-suppress missingInclude
 
 #include <cstdio>
 #include <vector>
@@ -42,11 +42,20 @@ std::vector<uncrustify::OptionGroup *> get_option_groups()
 void print_option_choices(FILE *pfile, uncrustify::GenericOption *option,
                           char const *key = "Choices")
 {
+   // Normal string
    fprintf(pfile, "%s=", key);
 
    for (auto c = option->possibleValues(); *c; ++c)
    {
       fprintf(pfile, "%s=%s%c", option->name(), *c, c[1] ? '|' : '\n');
+   }
+
+   // Regex string
+   fprintf(pfile, "%sRegex=", key);
+
+   for (auto c = option->possibleValues(); *c; ++c)
+   {
+      fprintf(pfile, "%s\\s*=\\s*%s%c", option->name(), *c, c[1] ? '|' : '\n');
    }
 }
 
@@ -54,34 +63,24 @@ void print_option_choices(FILE *pfile, uncrustify::GenericOption *option,
 void print_universal_indent_cfg(FILE *pfile)
 {
    const char *p_name;
-   char       ch      = '=';
+   char       ch;
    const auto &groups = get_option_groups();
    size_t     idx;
 
 #if defined (DEBUG) && !defined (WIN32)
-   vector<size_t> allGroups;
-   allGroups.reserve(16);
-   // first run to get the first option number of each group/categorie
-   size_t optionNumber         = 0;
-   bool   firstOptionNumberSet = false;
+   vector<size_t> allGroups(groups.size());
+   size_t         optionNumber = 0;
 
    for (idx = 0; idx < groups.size(); ++idx)
    {
       const auto *p_grp = groups[idx];
+      allGroups[idx] = optionNumber;
 
       for (auto *const option : p_grp->options)
       {
          UNUSED(option);
-
-         if (!firstOptionNumberSet)
-         {
-            allGroups[idx]       = optionNumber;
-            firstOptionNumberSet = true;
-         }
          optionNumber++;
       } // for (auto *const option : p_grp->options)
-
-      firstOptionNumberSet = false;
    } // end of first run
 
 //#else
@@ -170,7 +169,7 @@ void print_universal_indent_cfg(FILE *pfile)
           * by replacing '_' by a space and use some upper case characters.
           */
          char *optionNameReadable = new char[strlen(option->name()) + 1];
-         strcpy(optionNameReadable, option->name());
+         snprintf(optionNameReadable, strlen(option->name()) + 1, "%s", option->name());
 
          bool was_space = true;
 
@@ -188,7 +187,11 @@ void print_universal_indent_cfg(FILE *pfile)
             }
          }
 
+#if defined (DEBUG) && !defined (WIN32)
+         fprintf(pfile, "\n[(%zu)%s]\n", optionNumber, optionNameReadable);
+#else // DEBUG
          fprintf(pfile, "\n[%s]\n", optionNameReadable);
+#endif // DEBUG
          fprintf(pfile, "Category=%zu\n", idx);
 #if defined (DEBUG) && !defined (WIN32)
          fprintf(pfile, "Description=\"<html>(%zu)", optionNumber);
@@ -247,6 +250,8 @@ void print_universal_indent_cfg(FILE *pfile)
             fprintf(pfile, "EditorType=multiple\n");
             fprintf(pfile, "Choices=\"%s=0|%s=1|%s=2\"\n",
                     option->name(), option->name(), option->name());
+            fprintf(pfile, "ChoicesRegex=\"%s\\s*=\\s*0|%s\\s*=\\s*1|%s\\s*=\\s*2\"\n",
+                    option->name(), option->name(), option->name());
 #if defined (DEBUG) && !defined (WIN32)
             fprintf(pfile, "ChoicesReadable=\"(%zu)Spaces only|(%zu)Indent with tabs, align with spaces|(%zu)Indent and align with tabs\"\n",
                     optionNumber, optionNumber, optionNumber);
@@ -289,6 +294,7 @@ void print_universal_indent_cfg(FILE *pfile)
             case uncrustify::OT_NUM:
                fprintf(pfile, "EditorType=numeric\n");
                fprintf(pfile, "CallName=\"%s=\"\n", option->name());
+               fprintf(pfile, "CallNameRegex=\"%s\\s*=\\s*\"\n", option->name());
                fprintf(pfile, "MinVal=%s\n", option->minStr().c_str());
                fprintf(pfile, "MaxVal=%s\n", option->maxStr().c_str());
                fprintf(pfile, "ValueDefault=%s\n", option->str().c_str());
@@ -297,6 +303,7 @@ void print_universal_indent_cfg(FILE *pfile)
             case uncrustify::OT_UNUM:
                fprintf(pfile, "EditorType=numeric\n");
                fprintf(pfile, "CallName=\"%s=\"\n", option->name());
+               fprintf(pfile, "CallNameRegex=\"%s\\s*=\\s*\"\n", option->name());
                fprintf(pfile, "MinVal=%s\n", option->minStr().c_str());
                fprintf(pfile, "MaxVal=%s\n", option->maxStr().c_str());
                fprintf(pfile, "ValueDefault=%s\n", option->str().c_str());
@@ -350,6 +357,7 @@ void print_universal_indent_cfg(FILE *pfile)
             case uncrustify::OT_STRING:
             {
                fprintf(pfile, "CallName=%s=\n", option->name());
+               fprintf(pfile, "CallNameRegex=%s\\s*=\\s*\n", option->name());
                fprintf(pfile, "EditorType=string\n");
                fprintf(pfile, "ValueDefault=%s\n", option->str().c_str());
                break;

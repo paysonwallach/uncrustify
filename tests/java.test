@@ -13,6 +13,8 @@
 80020  java/java_foreach.cfg                             java/foreach.java
 80030  common/indent_var_def.cfg                         java/variable_aligns.java
 80040  common/empty.cfg                                  java/try.java
+80041  common/sp_before_sparen-r.cfg                     java/try.java
+80042  common/sp_before_sparen-f.cfg                     java/try.java
 80050  java/jdbi-r.cfg                                   java/double_brace.java
 80051  java/jdbi-f.cfg                                   java/double_brace.java
 80060  java/java_synchronized_1.cfg                      java/synchronized.java
@@ -42,3 +44,5 @@
 80304  java/Issue_1124-f.cfg                             java/Issue_1124.java
 80305  java/Issue_1124-r.cfg                             java/Issue_1124.java
 80306  java/leading-tabs-for-java-lambda.cfg             java/leading-tabs-for-java-lambda.java
+
+80400  java/Issue_1541.cfg                               java/Issue_1541.java

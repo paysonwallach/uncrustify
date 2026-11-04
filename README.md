@@ -1,14 +1,14 @@
-[![AppVeyor](https://img.shields.io/appveyor/ci/uncrustify/uncrustify/master.svg?style=flat-square&label=Windows)](https://ci.appveyor.com/project/uncrustify/uncrustify)
 [![Coverage Status](https://coveralls.io/repos/github/uncrustify/uncrustify/badge.svg?branch=master)](https://coveralls.io/github/uncrustify/uncrustify?branch=master)
 <a href="#"><img src="https://img.shields.io/badge/C++-11-blue.svg?style=flat-square"></a>
+[![Conan Center](https://shields.io/conan/v/uncrustify)](https://conan.io/center/uncrustify)
 
 ---------------------------
 
 # Uncrustify
-A source code beautifier for C, C++, C#, ObjectiveC, D, Java, Pawn and VALA
+A source code beautifier for C, C++, C#, Objective-C, D, Java, Pawn and Vala.
 
 ## Features
-* Highly configurable - 787 configurable options as of version 0.74.0
+* Highly configurable - 901 configurable options as of version 0.83.0
 - <details><summary>add/remove spaces</summary>
 
   - `sp_before_sparen`: _Add or remove space before '(' of 'if', 'for', 'switch', 'while', etc._
@@ -58,7 +58,7 @@ That should give you a pretty good idea of what Uncrustify can do.
 ---------------------------------------------------------------------------
 
 ## Binaries
-Pre compiled binaries for Windows can be downloaded [here](https://sourceforge.net/projects/uncrustify/files/).
+Pre compiled binaries for Windows can be downloaded from the [Releases](https://github.com/uncrustify/uncrustify/releases) page or from the [Sourceforge](https://sourceforge.net/projects/uncrustify/files/) website.
 
 ## Build
 [Python](https://www.python.org/) is an "interpreted high-level programming language for general-purpose programming", for this project it is needed to extend the capabilities of CMake.
@@ -66,22 +66,22 @@ Pre compiled binaries for Windows can be downloaded [here](https://sourceforge.n
 [CMake](https://cmake.org/) is a tool that generates build systems
 (Makefiles, Visual Studio project files, Xcode project files and others).
 
-To generate a build system for Uncrustify using CMake, create a build
-folder and run CMake from it:
+To generate a build system for Uncrustify using CMake on UNIX-like systems, create a
+build folder and run CMake from it, making sure to specify Release mode:
 
 ```bash
-$ mkdir build
-$ cd build
-$ cmake ..
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
 ```
-(Use `cmake -G Xcode ..` for Xcode)
+Other systems may require other flags (e.g. `cmake -G Xcode ..` for Xcode).
 
 Then use the build tools of your build system (in many cases this will
 simply be `make`, but on Windows it could be MSBuild or Visual Studio).
 Or use CMake to invoke it:
 
 ```bash
-$ cmake --build .
+cmake --build . --config Release
 ```
 
 If testing is enabled, CMake generates a `test` target, which you can
@@ -89,7 +89,7 @@ _build_ using your build system tools (usually `make test`). This can also
 be invoked using CTest:
 
 ```bash
-$ ctest -V -C Debug
+ctest -V -C Debug
 ```
 
 There is also an `install` target, which can be used to install the
@@ -101,11 +101,16 @@ build type when running CMake (by setting the `CMAKE_BUILD_TYPE`
 variable), and the generated files then build that configuration.
 
 An example of a single-configuration build system are Makefiles. You can
-build the Release configuration of Uncrustify (from the build folder) with:
+build the Release or Debug configurations of Uncrustify (from the build folder) with:
 
 ```bash
-$ cmake -DCMAKE_BUILD_TYPE=Release ..
-$ make
+cmake -DCMAKE_BUILD_TYPE=Release ..
+make
+```
+or
+```bash
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+make
 ```
 
 Other build systems are multi-configuration, which means you specify the
@@ -114,7 +119,7 @@ build type when building.
 An example of a multi-configuration build system are Visual Studios project
 files. When you open the project in Visual Studio, you can select which
 configuration to build. You can also do this while building from the
-command line with `cmake --build . --config Release`.
+command line with `cmake --build . --config Debug`.
 
 
 ## Bugs
@@ -156,7 +161,7 @@ Here are some areas that need attention:
 Firstly take a look at the [CONTRIBUTING.md](https://github.com/uncrustify/uncrustify/blob/master/CONTRIBUTING.md)
 
 Currently we have two continuous integration systems that test your PRs,
-TravisCI and Appveyor.
+TravisCI and Github actions.
 Tested are the test cases, the formatting of the code base and
 the output of the command line options.
 
@@ -182,23 +187,23 @@ The codebase has to be formatted by the options set up in
 cause TravisCI build failures.
 
 The Command line interface (CLI) output is tested by the
-`test_cli_options.sh` script. It is located inside of `tests/cli/` and operates
+`test_cli_options.py` script. It is located inside of `tests/cli/` and operates
 on the subdirectories of that folder.
 
 If a PR is altering the CLI output, files inside those directories might
 need to be manually updated. This often happens when options are
-added, removed or altered. Keep in mind that the version string line
+added, removed, or altered. Keep in mind that the version string line
 (example: `# Uncrustify-0.69.0_f`) of outputs from commands like
 `--show-config` should be replaced with a blank line.
 
 ### Debugging
 
-The first method is to use uncrustify itself to get debug informations.
+The first method is to use uncrustify itself to get debug information.
 Using:
-```.txt
-   uncrustify -c myExample.cfg -f myExample.cpp -p myExample.p -L A 2>myExample.A
+```bash
+uncrustify -c myExample.cfg -f myExample.cpp -p myExample.p -L A 2>myExample.A
 ```
-you get two files for the first informations.
+you get two files for the first information.
 The p-file gives you details of the parsing process and indentation.
 ```.txt
 # Line                Tag              Parent          Columns Br/Lvl/pp     Flag   Nl  Text
@@ -207,24 +212,24 @@ The p-file gives you details of the parsing process and indentation.
 #   1>         BRACE_OPEN[              CLASS][ 15/ 15/ 16/  1][0/0/0][ 100000400][0-0]               {
 ```
 
-The A-file gives you many details about the run itself, where the process is running thru,
+The A-file gives you many details about the run itself, where the process is running through,
 which values have the most important variables.
 ```.txt
-tokenize(2351): orig_line is 1, orig_col is 1, Text() 'class', type is CLASS, orig_col_end is 6
-tokenize(2351): orig_line is 1, orig_col is 7, Text() 'Capteur', type is WORD, orig_col_end is 14
-tokenize(2351): orig_line is 1, orig_col is 15, Text() '{', type is BRACE_OPEN, orig_col_end is 16
+tokenize(2351): orig line is 1, orig col is 1, text 'class', type is CLASS, orig col_end is 6
+tokenize(2351): orig line is 1, orig col is 7, text 'Capteur', type is WORD, orig col_end is 14
+tokenize(2351): orig line is 1, orig col is 15, text '{', type is BRACE_OPEN, orig col_end is 16
 ```
 
 You can also dump the parsing information of each formatting step using the 'dump steps' option.
-```.txt
-   uncrustify -c myExample.cfg -f myExample.cpp -ds dump
+```bash
+uncrustify -c myExample.cfg -f myExample.cpp -ds dump
 ```
 This will create a series of 'dump_nnn.log' files, each containing the parsing information at
 specific points of the formatting process ('dump_000.log' will list the formatting options in use).
 
 You can combine this option with -p and -L to get a lot of detailed debugging information.
-```.txt
-   uncrustify -c myExample.cfg -f myExample.cpp -p myExample.p -L A 2>myExample.A -ds dump
+```bash
+uncrustify -c myExample.cfg -f myExample.cpp -p myExample.p -L A 2>myExample.A -ds dump
 ```
 
 It might be useful to add some code lines to see where something is happening.
@@ -275,7 +280,7 @@ sp_trailing_ret_t;
 ```
 - Insert the code below to the file src/space.cpp
 ```.cpp
-   if (chunk_is_token(first, CT_TRAILING_RET_T))
+   if (first->Is(E_Token::CT_TRAILING_RET_T))
    {
       // Add or remove space around trailing return operator '->'.
       log_rule("sp_trailing_ret_t");
@@ -304,32 +309,32 @@ __NOTE__ This application works reasonably well but it has bugs. Do __not__
 apply it on your whole codebase without checking the results!
 
 Here are ways to run it:
-```
-$ uncrustify -c mystyle.cfg -f somefile.c -o somefile.c.unc
-$ uncrustify -c mystyle.cfg -f somefile.c > somefile.c.unc
-$ uncrustify -c mystyle.cfg somefile.c
-$ uncrustify -c mystyle.cfg --no-backup somefile.c
-$ uncrustify -c mystyle.cfg *.c
-$ uncrustify -c mystyle.cfg --no-backup *.c
+```bash
+uncrustify -c mystyle.cfg -f somefile.c -o somefile.c.unc
+uncrustify -c mystyle.cfg -f somefile.c > somefile.c.unc
+uncrustify -c mystyle.cfg somefile.c
+uncrustify -c mystyle.cfg --no-backup somefile.c
+uncrustify -c mystyle.cfg *.c
+uncrustify -c mystyle.cfg --no-backup *.c
 ```
 The `-c` flag selects the configuration file.
 The `-f` flag specifies the input file.
 The `-o` flag specifies the output file.
 If flag `-f` is used without flag `-o` the output will be send to `stdout`.
 
-Alternatively multiple or single files that should be processed can be
+Alternatively, multiple or single files that should be processed can be
 specified at the command end without flags.
 If the flag `--no-backup` is missing, every file is saved with the initial
 name and an additional suffix (can be changed with --suffix).
 
 For more options descriptions call:
 ```bash
-$ uncrustify -h
+uncrustify -h
 ```
 
 ## Configuring the program
 Uncrustify usually reads configuration files that are passed via the `-c`
-flag. If the flag is not provided Uncrustify will try to find a
+flag. If the flag is not provided, Uncrustify will try to find a
 configuration file via the `UNCRUSTIFY_CONFIG` environment variable or a
 file with the name `.uncrustify.cfg` or `uncrustify.cfg` in your home folder.
 
@@ -350,7 +355,7 @@ To get a list of:
   uncrustify --update-config-with-doc
   ```
 
-  As the names suggest both options can produce output that adds newly
+  As the names suggest, both options can produce output that adds newly
   introduced options to your old configuration file. For this your old
   configuration file has to be passed via the `-c` flag:
   ```bash
@@ -366,7 +371,14 @@ if the program did what you wanted. Repeat until your style is refined.
 To ease the process a bit, some 3rd party tools are available:
 - [Universal Indent GUI](http://universalindent.sourceforge.net/) - A
   cross-platform graphical configuration file editor for many code
-  beautifiers, including Uncrustify.
+  beautifiers, including Uncrustify. This is currently unmaintained.
+- [Universal Indent GUI TQt](https://mirror.git.trinitydesktop.org/gitea/TDE/universal-indent-gui-tqt) - A
+  maintained port of the above tool provided by the Trinity Desktop Environment (TDE) team.
+  See how to install binary packages for your distro
+  [here](https://wiki.trinitydesktop.org/Category:Documentation#Installing_from_a_Package_Manager).
+  <br/>**Note** you don't need to install TDE to run Universal Indent GUI TQt,
+  it only needs a few libraries. Therefore it can easily be used in any
+  other desktop environment.
 - [uncrustify_config](https://github.com/CDanU/uncrustify_config) - A web
   configuration tool based on Uncrustify's emscripten interface.
 - [UncrustifyX](https://github.com/ryanmaxwell/UncrustifyX) - Uncrustify

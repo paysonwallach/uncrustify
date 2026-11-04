@@ -4,6 +4,9 @@
 # PyCharm help directory
 venv/
 
+# PyCharm .run directory
+.run/
+
 # Compiled Python code
 *.pyc
 
@@ -68,3 +71,9 @@ cmake-build-*/
 
 # Compilation database
 compile_commands.json
+
+# macOS
+.DS_Store
+
+# cppcheck
+/.cache/cppcheck/

@@ -32,11 +32,12 @@ Basic Options:
  --no-backup  : Do not create backup and md5 files. Useful if files are under source control.
  --if-changed : Write to stdout (or create output FILE) only if a change was detected.
  -l           : Language override: C, CPP, D, CS, JAVA, PAWN, OC, OC+, VALA.
- -t           : Load a file with types (usually not needed).
+ -t FILE      : Load a file FILE with types (usually not needed).
  -q           : Quiet mode - no output on stderr (-L will override).
+                refers to blocking logging info from being sent to stderr.
  --frag       : Code fragment, assume the first line is indented correctly.
  --assume FN  : Uses the filename FN for automatic language detection if reading
-                from stdin unless -l is specified.
+                from stdin unless -l is specified. The filename is also used for formatting logic (ie. sorting headers).
 
 Config/Help Options:
  -h -? --help --usage     : Print this message and exit.
@@ -61,8 +62,11 @@ Debug Options:
  -L SEV                : Set the log severity (see log_levels.h; note 'A' = 'all')
  -s                    : Show the log severity in the logs.
  --decode              : Decode remaining args (chunk flags) and exit.
- --tracking_space FILE : Prepare tracking informations for debugging.
+ --tracking space:FILE : Prepare space tracking information for debugging.
+ --tracking nl:FILE    : Prepare newline tracking information for debugging.
+ --tracking start:FILE : Prepare start of statement tracking information for debugging.
                          Cannot be used with the -o option'
+ --find_deprecated     : look for deprecated option(s) and exit.
 
 Usage Examples
 cat foo.d | uncrustify -q -c my.cfg -l d
@@ -80,4 +84,7 @@ Note: Use comments containing ' *INDENT-OFF*' and ' *INDENT-ON*' to disable
       enable_processing_cmt and disable_processing_cmt).
 
 There are currently x options and minimal documentation.
-Try UniversalIndentGUI and good luck.
+Try Universal Indent GUI TQt
+  at https://mirror.git.trinitydesktop.org/gitea/TDE/universal-indent-gui-tqt
+ or UniversalIndentGUI
+  at http://universalindent.sourceforge.net

@@ -39,7 +39,7 @@ declare namespace LibUncrustify
 {
     // <editor-fold desc="enums">
 
-    // Example how to iterate below options : forin iterate Options,
+    // Example how to iterate below options : for in iterate Options,
     // skip 'values' key, [ s : Options_STRING ] : EmscriptenEnumTypeObject;
 
     // region enum bindings
@@ -232,6 +232,9 @@ declare namespace LibUncrustify
         SIZEOF : TokenTypeValue;
         DECLTYPE : TokenTypeValue;
         RETURN : TokenTypeValue;
+        CO_AWAIT : TokenTypeValue;
+        CO_YIELD : TokenTypeValue;
+        CO_RETURN : TokenTypeValue;
         BREAK : TokenTypeValue;
         UNION : TokenTypeValue;
         GOTO : TokenTypeValue;
@@ -636,7 +639,7 @@ declare namespace LibUncrustify
         /**
          * format text
          *
-         * @param file file string that is going to be formated
+         * @param file file string that is going to be formatted
          * @param lang specifies in which language the input file is written (see LangFlag)
          * @param frag [optional] true=fragmented code input
          *                        false=unfragmented code input [default]
@@ -649,7 +652,7 @@ declare namespace LibUncrustify
         /**
          * generate debug output
          *
-         * @param file file string that is going to be formated
+         * @param file file string that is going to be formatted
          * @param lang specifies in which language the input file is written (see LangFlag)
          * @param frag [optional] true=fragmented code input
          *                        false=unfragmented code input [default]

@@ -1,6 +1,6 @@
 /**
  * @file long_pawn.h
- * prototypes for long_pawn.c
+ * prototypes for long_pawn.cpp
  *
  * @author  Ben Gardner
  * @license GPL v2+
@@ -18,17 +18,17 @@
  *
  * We are looking for unbraced functions.
  */
-void pawn_prescan(void);
+void pawn_prescan();
 
 
-void pawn_add_virtual_semicolons(void);
+void pawn_add_virtual_semicolons();
 
 
 /**
  * We are in a virtual brace and hit a newline.
  * If this should end the vbrace, then insert a VSEMICOLON and return that.
  *
- * @param pc  The newline (CT_NEWLINE)
+ * @param pc  The newline (E_Token::CT_NEWLINE)
  *
  * @return Either the newline or the newly inserted virtual semicolon
  */
@@ -39,7 +39,7 @@ Chunk *pawn_check_vsemicolon(Chunk *pc);
  * Turns certain virtual semicolons invisible.
  *  - after a close brace with a parent of switch, case, else, if
  */
-void pawn_scrub_vsemi(void);
+void pawn_scrub_vsemi();
 
 
 //! add a semicolon after ...

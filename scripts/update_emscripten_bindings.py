@@ -22,7 +22,7 @@ FILE_TS = "%s/emscripten/libUncrustify.d.ts" % ROOT_DIR
 REGION_START = "region enum bindings"
 REGION_END = "endregion enum bindings"
 
-''' Enums which values need to be updated in the binding code '''
+# Enums which values need to be updated in the binding code
 ENUMS_INFO = [
     {
         'name': 'option_type_e',
@@ -69,7 +69,7 @@ ENUMS_INFO = [
         'substitute_name': 'TokenType',
         'filepath': '%s/src/token_enum.h' % ROOT_DIR,
         'extra_arg': [],
-        'filter_values': ['CT_TOKEN_COUNT_'],
+        'filter_values': ['E_Token::CT_TOKEN_COUNT_'],
         'suffix_chars': 3,
     },
     {

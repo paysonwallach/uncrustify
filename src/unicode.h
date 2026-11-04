@@ -1,18 +1,19 @@
 /**
  * @file unicode.h
- * prototypes for unicode.c
+ * prototypes for unicode.cpp
  *
  * @author  Ben Gardner
  * @license GPL v2+
  */
-
 #ifndef UNICODE_H_INCLUDED
 #define UNICODE_H_INCLUDED
 
 #include "uncrustify_types.h"
+#include <deque>
+#include <vector>
 
 
-void write_bom(void);
+void write_bom();
 
 
 /**
@@ -21,14 +22,13 @@ void write_bom(void);
 void write_char(int ch);
 
 
-void write_string(const unc_text &text);
+void write_string(const UncText &text);
 
 
 //! Figure out the encoding and convert to an int sequence
-bool decode_unicode(const std::vector<UINT8> &in_data, std::deque<int> &out_data, char_encoding_e &enc, bool &has_bom);
+bool decode_unicode(MemoryFile &fm);
 
 
-void encode_utf8(int ch, std::vector<UINT8> &res);
-
+void encode_utf8(int ch, std::vector<uint8_t> &res);
 
 #endif /* UNICODE_H_INCLUDED */

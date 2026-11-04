@@ -1,0 +1,15 @@
+Warning.
+
+Only usable by a token with a type
+   E_Token::CT_NEWLINE
+   E_Token::CT_NL_CONT
+   E_Token::CT_COMMENT_MULTI
+   E_Token::CT_COMMENT_CPP
+   E_Token::CT_STRING_MULTI)
+
+
+It not allowed to set the value of m_nlCount for all other type.
+
+It will follow a call to exit(EX_SOFTWARE)
+
+See also the Issue #4550

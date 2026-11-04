@@ -33,7 +33,7 @@ enum log_sev_t
    LERR      = 1,   //! error messages
    LWARN     = 2,   //! warnings
    LNOTE     = 3,   //! user notifications
-   LINFO     = 4,   //! user informations
+   LINFO     = 4,   //! user information
    LDATA     = 5,   //! data logging
 
    LFILELIST = 8,   //! Files in the file list file
@@ -61,7 +61,7 @@ enum log_sev_t
    LCMTIND   = 30,  //! Comment Indent
    LINDLINE  = 31,  //! indent line
    LSIB      = 32,  //! Scan IB
-   LRETURN   = 33,  //! add/remove parens for return
+   LRETURN   = 33,  //! add/remove parens for return or throw
    LBRDEL    = 34,  //! brace removal
    LFCN      = 35,  //! function detection
    LFCNP     = 36,  //! function parameters
@@ -109,7 +109,7 @@ enum log_sev_t
    LOCCLASS  = 78,  //! OC Class stuff
    LOCMSG    = 79,  //! OC Message stuff
    LBLANK    = 80,  //! Blank Lines
-   LOBJCWORD = 81,  //! Convert keyword to CT_WORD in certain circumstances
+   LOBJCWORD = 81,  //! Convert keyword to E_Token::CT_WORD in certain circumstances
    LCHANGE   = 82,  //! something changed
    LCONTTEXT = 83,  //! comment cont_text set
    LANNOT    = 84,  //! Java annotation
@@ -119,8 +119,8 @@ enum log_sev_t
    LINDENTAG = 88,  //! indent again
    LNFD      = 89,  //! newline-function-def
    LJDBI     = 90,  //! Java Double Brace Init
-   LSETPAR   = 91,  //! set_chunk_parent()
-   LSETTYP   = 92,  //! set_chunk_type()
+   LSETPAR   = 91,  //! Chunk::SetParentType()
+   LSETTYP   = 92,  //! Chunk::SetType()
    LSETFLG   = 93,  //! set_chunk_flags()
    LNLFUNCT  = 94,  //! newlines before function
    LCHUNK    = 95,  //! Add or delete chunk
@@ -132,6 +132,7 @@ enum log_sev_t
    LOUTPUT   = 101, //! output
    LUNC      = 102, //! rules used in uncrustify.cpp
    LQT       = 103, //! load/save options for Qt
+   LVARDFBLK = 104, //! newlines for variable definition blocks
    LOTHER    = 255, //! stuff that doesn't neatly fit any other category
 };
 

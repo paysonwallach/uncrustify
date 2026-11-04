@@ -1,3 +1,256 @@
+Change highlights in uncrustify-0.83.0 (May 2026)
+-------------------------------------------------------------------------------
+   21d9c2a7c19a20c1e659685f8e1b4c90f839d52b
+     Added   : align_var_def_span_num_empty_lines   Dec 14 2025
+     Added   : align_var_class_span_num_pp_lines    Dec 14 2025
+     Added   : align_var_def_span_num_cmt_lines     Dec 14 2025
+     Added   : align_var_class_span_num_cmt_lines   Dec 14 2025
+     Added   : align_var_def_span_num_pp_lines      Dec 14 2025
+     Added   : align_var_struct_span_num_pp_lines   Dec 14 2025
+     Added   : align_var_struct_span_num_cmt_lines  Dec 14 2025
+     Added   : align_var_class_span_num_empty_lines Dec 14 2025
+     Added   : align_var_struct_span_num_empty_lines Dec 14 2025
+   74a275b03b52f0d439fd16f7d3df32c3855fe34c
+     Added   : align_func_proto_span_num_empty_lines Dec 15 2025
+     Added   : align_func_proto_span_num_pp_lines   Dec 15 2025
+     Added   : align_func_proto_span_num_cmt_lines  Dec 15 2025
+   7a60c2d80af7497d200bf71069a97713284128bd
+     Added   : sp_paren_deref                       Jan 17 2026
+   a58e45ae2962964b3466f2f5522314885516b1cf
+     Added   : align_assign_span_num_pp_lines       Dec 19 2025
+     Added   : align_enum_equ_span_num_empty_lines  Dec 19 2025
+     Added   : align_assign_span_num_cmt_lines      Dec 19 2025
+     Added   : align_enum_equ_span_num_pp_lines     Dec 19 2025
+     Added   : align_enum_equ_span_num_cmt_lines    Dec 19 2025
+     Added   : align_assign_span_num_empty_lines    Dec 19 2025
+   4aa7854307789738ba08b372ad5ced5ed7fbd606
+     Added   : nl_collapse_do_one_liner             Jan 22 2026
+     Added   : nl_collapse_switch_one_liner         Jan 22 2026
+     Added   : nl_collapse_if_one_liner             Jan 22 2026
+     Added   : nl_collapse_for_one_liner            Jan 22 2026
+     Added   : nl_collapse_while_one_liner          Jan 22 2026
+   183b7b289f22081664b1c087774c372766dd5342
+     Added   : align_func_params_span_num_pp_lines  Dec 19 2025
+     Added   : align_func_params_span_num_cmt_lines Dec 19 2025
+     Added   : align_func_params_span_num_empty_lines Dec 19 2025
+   e183e750b3d46861a61b930ceebd25eeec18c3b9
+     Added   : align_typedef_span_num_empty_lines   Dec 19 2025
+     Added   : align_typedef_span_num_pp_lines      Dec 19 2025
+     Added   : align_typedef_span_num_cmt_lines     Dec 19 2025
+   6f42553448639a31dee3deea6de06e3bedc3803a
+     Added   : sp_after_ref_qualifier               Jul  9 2025
+     Added   : sp_before_ref_qualifier              Jul  9 2025
+   c78734859192520bd540c0fc5323cfd2196e7ca0
+     Added   : sp_deduction_guide_paren             Mar 29 2026
+     Added   : sp_deduction_guide_paren_empty       Mar 29 2026
+     Added   : sp_deduction_guide_arrow             Mar 29 2026
+   e0adbbcc70c7290aa3e441a9c68d351b4f91d11c
+     Added   : global_span_num_pp_lines             Apr 13 2026
+     Added   : global_span_num_cmt_lines            Apr 13 2026
+     Added   : global_span_num_empty_lines          Apr 13 2026
+   6ffe91165893aa33ac9135e16442b7266f1f2b02
+     Added   : align_constr_value_span_num_empty_lines Apr 20 2026
+     Added   : align_constr_value_span_num_pp_lines Apr 20 2026
+     Added   : align_constr_value_span_num_cmt_lines Apr 20 2026
+   72a92c7cbe8e49029f44e6ec4ec4fa6b9990b006
+     Added   : align_same_func_call_params_span_num_cmt_lines May  6 2026
+     Added   : align_same_func_call_params_span_num_empty_lines May  6 2026
+     Added   : align_same_func_call_params_span_num_pp_lines May  6 2026
+
+Change highlights in uncrustify-0.82.0 (November 2025)
+-------------------------------------------------------------------------------
+   No changes to available options
+
+Change highlights in uncrustify-0.81.0 (May 2025)
+-------------------------------------------------------------------------------
+   61fe771bf1facb01f291f24564bba1af96636270
+     Added   : nl_bool_expr_hierarchical            Nov 18 2024
+   344657f2c0b7e4db246787c377e16965ade10679
+     Added   : indent_bool_nested_all               Nov 18 2024
+
+Change highlights in uncrustify-0.80.1 (November 2024)
+-------------------------------------------------------------------------------
+   d0ad61170436df7afab2b8041b49837f06f087ec
+     Removed : sp_pragma_open_parenthesis           Nov 16 2024
+     Removed : sp_inside_gparen                     Nov 16 2024
+
+Change highlights in uncrustify-0.80.0 (November 2024)
+-------------------------------------------------------------------------------
+   273a37afbf5500d19011d4a392339160fffbfb11
+     Added   : sp_inside_gparen                     Jul  5 2024
+     Added   : sp_pragma_open_parenthesis           Jul  5 2024
+   6337585b03cdfdfa1f9b8ba33d8e31048a5c2eee
+     Added   : sp_struct_type                       Sep 30 2024
+   fc325e3a2ff8eeff5011f9bb2905b30ccc0a4772
+     Added   : sp_emb_cmt_priority                  Oct 11 2024
+
+Change highlights in uncrustify-0.79.0 (May 2024)
+-------------------------------------------------------------------------------
+   881cd25e1f0854481b002a58a7dff68f146d7ee3
+     Added   : sp_cpp_before_struct_binding_after_byref    Dec  8 2023
+   1f48216e0d87ba84bf10268c46943c47ce473512
+     Added   : sp_string_string                            Dec 19 2023
+   364f8d77120001783c2e792821bcb4052748631d
+     Added   : pp_unbalanced_if_action                     Feb 10 2024
+     Removed : pp_warn_unbalanced_if                       Feb 10 2024
+   9a821fe71d307613916805d4c3fee1c9ee01d96f
+     Removed : sp_balance_nested_parens                    Apr 11 2024
+   71e9c30da59606a2ce32c561d47d6fafa49d2d7f
+     Added   : debug_print_version                         May  3 2024
+   a50dd5480fe646059c9ea2b84243b674f9fbb575
+     Added   : nl_oc_msg_args_finish_multi_line            May  7 2024
+
+Change highlights in uncrustify-0.78.1 (November 2023)
+-------------------------------------------------------------------------------
+   24ca784086c31ce6aa0817ac9c99539a5ac52d00
+     Improve line splitting logic to avoid awkward splits  Nov 19 2023
+
+Change highlights in uncrustify-0.78.0 (November 2023)
+-------------------------------------------------------------------------------
+   50b364e02d4e6ebe5fa99d2d1de642f1a3fb6570
+     Added   : align_nl_cont_spaces                 May 11 2023
+   7c53d3cc66d939dc5b0de25868e947508e2353d5
+     Added   : sp_after_bit_colon                   Jun 28 2023
+     Added   : sp_before_bit_colon                  Jun 28 2023
+   b4af21a59630315f79ec28bc5449c31f48194111
+     Added   : sp_between_ptr_ref                   Jul 14 2023
+   84780fef16da0552e7f44785d63d23a2b0e6a8b4
+     Added   : nl_min_after_func_body               Aug  3 2023
+   d8931537292a5cb897cfd561adf581d27087bfe4
+     Added   : sp_before_keyword_ptr_star           Aug 10 2023
+   8ffe999d3382c6f516372627bd529917bc6611ae
+     Added   : sp_before_global_scope_ptr_star      Aug 10 2023
+     Added   : sp_before_scope_ptr_star             Aug 10 2023
+   f493e4d9e003648753e6574ba2cd61f5c0bd1352
+     Added   : sp_before_operator_ptr_star          Aug 10 2023
+     Added   : sp_before_qualifier_ptr_star         Aug 10 2023
+     Removed : sp_before_keyword_ptr_star           Aug 10 2023
+   adbb82b0f6e551ef976e64a1351ca0eb05acf932
+     Added   : debug_use_the_exit_function_pop      Aug 15 2023
+   2e0e019dc28cac0844b5cff81d05859ee1a02394
+     Added   : nl_max_after_func_body               Aug 28 2023
+   cb44fe733a2c1e0391cfa5afdac77f7e66d688e1
+     Added   : sp_cpp_lambda_argument_list_empty    Sep 12 2023
+   e058aafd4ee5e407e250a6b921886d2c00d6a622
+     Added   : align_func_proto_span_ignore_cont_lines Oct 21 2023
+
+Change highlights in uncrustify-0.77.0 (May 2023)
+-------------------------------------------------------------------------------
+   ea6c54eefe2f3272a4867d30920408c327167199
+     Added   : sp_cmt_cpp_pvs                       Jan 28 2023
+   74cf6ca40a0ce1b0d2499a92128ccde34bb48428
+     Added   : sp_inside_rparen                     Feb 15 2023
+     Added   : sp_func_call_user_inside_rparen      Feb 15 2023
+     Added   : sp_inside_rparens                    Feb 15 2023
+   70fac8d68b8a697132a21c5c59a09fd91e0a0486
+     Added   : sp_cmt_cpp_lint                      Mar 18 2023
+   73d9ab72ce736e9689f56406302f6d62ddfc3835
+     Added   : sp_qualifier_ptr_star_trailing       Apr 13 2023
+     Added   : sp_qualifier_unnamed_ptr_star        Apr 13 2023
+     Added   : sp_qualifier_ptr_star_func           Apr 13 2023
+   8b639a0b31637204da3d17dc29cc659def6f4cf7
+     Added   : mod_add_force_c_closebrace_comment   Apr 19 2023
+
+Change highlights in uncrustify-0.76.0 (November 2022)
+-------------------------------------------------------------------------------
+   1aea3d1fcb55dc2ca40dfe2b1d548685a415ef3a
+     Added   : nl_collapse_empty_body_functions     Apr 29 2022
+   c7f5df072f56bb0e3a9b897e16b8e5fc283f3bcf
+     Added   : set_numbering_for_html_output        May 29 2022
+   92e4a36a5a78d9af523008aeb71e7acfe199269a
+     Added   : mod_infinite_loop                    Jun 22 2022
+   6e807bcec01382b164562c8ae5939d2b5ee76877
+     Added   : mod_short_int                        Jun 28 2022
+     Added   : mod_long_int                         Jun 28 2022
+     Added   : mod_unsigned_int                     Jun 28 2022
+     Added   : mod_signed_int                       Jun 28 2022
+   baad5db83faf5fb771cea8898760ad582227ccda
+     Added   : mod_int_prefer_int_on_left           Jul  6 2022
+     Added   : mod_int_long                         Jul  6 2022
+     Added   : mod_int_signed                       Jul  6 2022
+     Added   : mod_int_unsigned                     Jul  6 2022
+     Added   : mod_int_short                        Jul  6 2022
+   e6a5458d32ca26c8b7d24f514115ebc36fce2348
+     Added   : nl_oc_msg_args_min_params            Jul  9 2022
+   862369a315763ce1286732da3713414cd2533227
+     Added   : pp_space_after                       Jul 14 2022
+     Added   : pp_space_before                      Jul 14 2022
+     Removed : pp_space                             Jul 14 2022
+   be0d1664f901d1cbfa7bf7697a883adf4b709444
+     Added   : nl_throw_expr                        Jul 19 2022
+     Added   : mod_paren_on_throw                   Jul 19 2022
+   9e65feefa2d66c5d08049e53468cae682f66800d
+     Added   : debug_sort_the_tracks                Aug  2 2022
+   b58f1298a3ddcd256ecb0688f6b18ca7c623f594
+     Removed : pp_space_before                      Aug  6 2022
+   a31e5c100de768b4fec45a3e1c2d1e008824b2c6
+     Added   : nl_var_def_blk_end_func_top          Aug 11 2022
+     Removed : nl_func_var_def_blk                  Aug 11 2022
+   56e2159b29c372ebd1e240d427c842b5bb0b2147
+     Added   : pp_indent_with_tabs                  Sep  6 2022
+   35075d50967014dd7127640d2505bca5dc21dfe5
+     Added   : pp_multiline_define_body_indent      Sep 15 2022
+   5b88110f5bb685a9b298b247207e32c305366d18
+     Added   : nl_oc_msg_args_max_code_width        Sep 20 2022
+   0c8e5e827d3b5a007247ef3d5ed937cf18378680
+     Added   : debug_decode_the_flags               Oct  9 2022
+
+Change highlights in uncrustify-0.75.0 (May 2022)
+-------------------------------------------------------------------------------
+  52131d9fa22fd0c655ae2510563ff85306d4bd27
+    Added   : mod_move_case_return                 Nov 25 2021
+  d0008e933daca163ef8f7258f526e75fb8b5b160
+    Added   : sp_ptr_star_func_type                Dec  8 2021
+  a17751ae534cb7d1a8b505a111d7b8b50c9842d4
+    Added   : pp_indent_at_level0                  Dec 14 2021
+  498c1b3a6c96c9dd8ec13a4c0f616acdb7a03cc5
+    Added   : align_braced_init_list_thresh        Dec 16 2021
+    Added   : align_braced_init_list_span          Dec 16 2021
+  8e811b9a57bc43d280aa592d8838cff93227968e
+    Added   : align_assign_on_multi_var_defs       Dec 18 2021
+  75d3c536789ef23d2d8568d891a4e3ba73aa7045
+    Added   : sp_byref_paren                       Dec 24 2021
+  d8507bb212aa317dce0f51227b8fd862354e03c2
+    Added   : sp_not_not                           Dec 28 2021
+  d9e2ae9aad5481f9da818909893e2f55d51ba392
+    Added   : indent_ignore_comma_paren            Jan  4 2022
+    Added   : indent_ignore_comma_brace            Jan  4 2022
+  8eff5202a58732e17f063af8360ff3e2691713aa
+    Added   : indent_ignore_bool_paren             Jan 13 2022
+  2c02f5c8285882ddf756992d842db12d0f98188a
+    Added   : indent_ignore_arith                  Jan 18 2022
+  0664cacee7689cf838425e83f38fb84f5e71bc63
+    Added   : mod_full_paren_return_bool           Jan 21 2022
+    Added   : mod_full_paren_assign_bool           Jan 21 2022
+  d593f257e88161a3ed1cff15b354c85e3da68992
+    Added   : sp_type_colon                        Jan 25 2022
+  026162b8da51660126863b42d00245e21a47d7c0
+    Removed : indent_ignore_comma_paren            Jan 28 2022
+    Removed : indent_ignore_bool_paren             Jan 28 2022
+    Removed : indent_ignore_comma_brace            Jan 28 2022
+  6cb50031c5e2e3681d69c3dafdbb865a5b6b6a2c
+    Added   : indent_ignore_semicolon              Feb  1 2022
+  b6f55dd25fb6a12c7f81c0090f8ee42e8823ee93
+    Added   : sp_enum_brace                        Feb  2 2022
+  8aa0522fcc2ad468f1122943443f5ebf426fffc1
+    Added   : indent_ignore_before_class_colon     Feb  4 2022
+  133fe55d6fc0b2e1695bd7a70ccd6d2dcd1b2262
+    Added   : indent_ignore_before_constr_colon    Feb  4 2022
+  c95460809c74a73459c61712ff2d9142dff101d7
+    Added   : indent_ignore_bool                   Feb 25 2022
+  b37091110063b5c24b64516a49af09b8ca3cc18c
+    Added   : indent_ignore_first_continue         Feb 25 2022
+  e84f08879a7cf53b0301099a64faadeacf04a3a5
+    Added   : indent_ignore_assign                 Mar  1 2022
+  6ef69ee2a359f2e1bd8517ba4af25b969951fa71
+    Added   : indent_ignore_case_brace             Mar  9 2022
+  02a5e50419fd1bf7c9bf0ff9d208035b47db6fbf
+    Added   : indent_namespace_inner_only          Apr 12 2022
+  9040b9f068a179c3a09e0cf202a5ed7f91b2a12b
+    Added   : pp_warn_unbalanced_if                Apr 15 2022
+  df2ef721c95105b62a9e0cb0e9985947a739a44b
+    Removed : sp_type_question                     Apr 30 2022
+
 Change highlights in uncrustify-0.74.0 (November 2021)
 -------------------------------------------------------------------------------
   4714d5d673d5b9c8f45d70c179f508d60130b18a
@@ -398,7 +651,7 @@ New options:
   - pp_indent_brace                      Jun 22
 
 Changing option:
-  - The option name is changed from 'align_number_left' to 'align_number_right' 
+  - The option name is changed from 'align_number_left' to 'align_number_right'
 
 Bugfix:
  - Issue # 548, 1098, 1103, 1108, 1112, 1127, 1134, 1158, 1165, 1170, 1187,
@@ -509,7 +762,7 @@ Bugfix:
     #518, #519, #520, #521, #522, #524, #529, #530, #533, #536, #539, #542,
     #543, #544, #546, #568 are fixed
  - Proposals #409, #477 are implemented
- - Issue #411 is partialy fixed
+ - Issue #411 is partially fixed
 
 
 Change highlights in uncrustify-0.63 (Mar 2016)
@@ -557,7 +810,7 @@ Reverse:
    I cannot anderstand this change.
    It makes some troubles: Bug # 637
    No test file for it found
-   Reverse the change until more informations could be found
+   Reverse the change until more information could be found
 
 Change:
  - CT_DC_MEMBER + CT_FOR into CT_DC_MEMBER + CT_FUNC_CALL
@@ -569,7 +822,7 @@ Some more Qt-macros:
 
 Change highlights in uncrustify4Qt-0.62 (Oct 2015)
 -------------------------------------------------------------------------------
-This is an extention of uncrustify to support Qt-macros
+This is an extension of uncrustify to support Qt-macros
  - Q_OBJECT
  - Q_EMIT
  - SLOT
@@ -835,7 +1088,7 @@ Changes in uncrustify-0.53 (16 May 2009)
 -------------------------------------------------------------------------------
  - Fix sp_inside_braces* options, which were broken by the fix to issue #2629652
  - Fix sp_after_cast, which was broken by a previous fix
- - Be a little more agressive in removing unecessary semicolons
+ - Be a little more aggressive in removing unnecessary semicolons
  - Fix one case where the parser leaves a preprocessor #define
  - Fix indent of line starting with '(' after a function name
  - Add align_var_def_attribute
@@ -925,7 +1178,7 @@ Changes in uncrustify-0.50 (25-Oct-2008)
  - Add sp_cpp_cast_paren
  - Add support for ObjC '@property' statements
  - Add sp_brace_typedef and sp_case_label
- - Merge in the lastest UniversalIndent support (Thanks, Thomas!)
+ - Merge in the latest UniversalIndent support (Thanks, Thomas!)
  - Fix extra '\r' in multi-line comments and strings
  - Add sp_throw_paren
  - Assume a '<' in a preprocessor can't be part of a template
@@ -998,7 +1251,7 @@ Changes in uncrustify-0.48 (18-Jul-2008)
 
 Changes in uncrustify-0.47 (06-Jun-2008)
 -------------------------------------------------------------------------------
- - Fix inifinite loop bug in reindent_line
+ - Fix infinite loop bug in reindent_line
  - Fix prototype detection with template parameter types
  - Fix off-by-1 error on positive values for indent_access_spec and indent_label
  - Add indent_extern to control indent extern-type namespaces
@@ -1032,7 +1285,7 @@ Changes in uncrustify-0.45 (7-Mar-2008)
 -------------------------------------------------------------------------------
  - Fix buffer overflow in logger code
  - Add sp_enum_assign
- - For elipses handling in the GCC extension "case 1 ... 5:"
+ - For ellipsis handling in the GCC extension "case 1 ... 5:"
  - Add sp_after_class_colon, sp_before_class_colon, and sp_after_type
  - Send usage text to stdout instead of stderr
  - Fix mod_add_long_function_closebrace_comment if the file doesn't end in a newline
@@ -1472,7 +1725,7 @@ Changes in uncrustify-0.0.12 (30-Mar-2006)
 -------------------------------------------------------------------------------
  - Add support for D template format "Foo!(int,char)"
  - Fix a format bug in a log
- - Fix elipsis spacing (remove space before elipsis)
+ - Fix ellipsis spacing (remove space before ellipsis)
  - Don't use getopt as it isn't all that portable (at least for QNX)
  - Rename some files
  - Bugfix: don't add virtual braces on the same line as a preprocessor
@@ -1541,4 +1794,3 @@ Changes in uncrustify-0.0.8 (13-Mar-2006)
  - partially implement align on tabstop
  - fix virtual brace spacing (no more "else return;" => "elsereturn;")
  - add some more tests
-

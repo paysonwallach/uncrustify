@@ -1,6 +1,8 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.10)
 
 project(uncrustify)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
   message(FATAL_ERROR "
@@ -33,6 +35,25 @@ endif()
 if(MSVC)
   add_definitions(/D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_WARNINGS /wd4267)
   add_definitions(/utf-8)
+
+  # Match the official MinGW-w64 binaries, which are statically linked
+  # against the CRT (no runtime DLL dependency).
+  foreach(flag_var
+      CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
+      CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO
+      CMAKE_C_FLAGS CMAKE_C_FLAGS_DEBUG CMAKE_C_FLAGS_RELEASE
+      CMAKE_C_FLAGS_MINSIZEREL CMAKE_C_FLAGS_RELWITHDEBINFO)
+    string(REGEX REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
+  endforeach()
+
+  # Match the official MinGW-w64 binaries, which embed no manifest.
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFEST:NO")
+
+  # Release builds must not carry debug information. /EMITPOGOPHASEINFO is
+  # an undocumented link.exe switch that strips the .debug section outright.
+  string(REGEX REPLACE "/Z[iI7]" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+  string(REGEX REPLACE "/Z[iI7]" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
+  set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /debug:none /EMITPOGOPHASEINFO")
 elseif(CMAKE_COMPILER_IS_GNUCXX)
   set(gcc_warning_flags
     -Wall
@@ -41,7 +62,6 @@ elseif(CMAKE_COMPILER_IS_GNUCXX)
     -Wpointer-arith
     -Wcast-qual
     -Wcast-align
-    -Wc++11-extensions
   )
   foreach(flag ${gcc_warning_flags})
     string(REGEX REPLACE "[^a-zA-Z0-9]+" "_" flag_var "CXXFLAG_${flag}")
@@ -56,11 +76,8 @@ elseif(CMAKE_COMPILER_IS_GNUCXX)
   endif()
   unset(gcc_warning_flags)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-deprecated-declarations")
 endif()
-
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 if(ENABLE_SANITIZER)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O1 -fno-omit-frame-pointer -fsanitize=${ENABLE_SANITIZER}")
@@ -138,10 +155,25 @@ endif()
 # Generate uncrustify_version.h
 #
 
-set(UNCRUSTIFY_VERSION "0.74.0_f")
+set(UNCRUSTIFY_VERSION "0.83.0_f")
 
 option(NoGitVersionString "Do not use make_version.py and git to build a version string" OFF)
 if(NoGitVersionString)
+  # No git lookup in this mode, so VER_STRING can't carry a commit hash --
+  # derive VER_MAJOR/VER_MINOR/VER_PATCH/VER_STRING from the static fallback
+  # literal above, same as GenerateVersionHeader.cmake does for the git path.
+  string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _ver_match "${UNCRUSTIFY_VERSION}")
+  if(NOT _ver_match)
+    message(FATAL_ERROR
+      "Could not parse major.minor.patch out of UNCRUSTIFY_VERSION "
+      "'${UNCRUSTIFY_VERSION}'; cannot derive VER_MAJOR/VER_MINOR/VER_PATCH "
+      "for uncrustify.rc")
+  endif()
+  set(VER_MAJOR ${CMAKE_MATCH_1})
+  set(VER_MINOR ${CMAKE_MATCH_2})
+  set(VER_PATCH ${CMAKE_MATCH_3})
+  set(VER_STRING "${VER_MAJOR}.${VER_MINOR}.${VER_PATCH}")
+
   configure_file(src/uncrustify_version.h.in uncrustify_version.h @ONLY)
   add_custom_target(generate_version_header) # Dummy target
 else()
@@ -240,79 +272,136 @@ py_gen(../etc/uncrustify.xml
 # Uncrustify
 #
 set(uncrustify_sources
-  src/align_add.cpp
-  src/align_asm_colon.cpp
-  src/align_assign.cpp
-  src/align_braced_init_list.cpp
-  src/align.cpp
-  src/align_eigen_comma_init.cpp
-  src/align_func_params.cpp
-  src/align_func_proto.cpp
-  src/align_init_brace.cpp
-  src/align_left_shift.cpp
-  src/align_log_al.cpp
-  src/align_nl_cont.cpp
-  src/align_oc_decl_colon.cpp
-  src/align_oc_msg_colons.cpp
-  src/align_oc_msg_spec.cpp
-  src/align_preprocessor.cpp
-  src/align_same_func_call_params.cpp
-  src/align_stack.cpp
-  src/align_struct_initializers.cpp
-  src/align_tab_column.cpp
-  src/align_tools.cpp
-  src/align_trailing_comments.cpp
-  src/align_typedefs.cpp
-  src/align_var_def_brace.cpp
+  src/align/add.cpp
+  src/align/align.cpp
+  src/align/asm_colon.cpp
+  src/align/assign.cpp
+  src/align/braced_init_list.cpp
+  src/align/eigen_comma_init.cpp
+  src/align/func_params.cpp
+  src/align/func_proto.cpp
+  src/align/init_brace.cpp
+  src/align/left_shift.cpp
+  src/align/log_al.cpp
+  src/align/nl_cont.cpp
+  src/align/oc_decl_colon.cpp
+  src/align/oc_msg_colons.cpp
+  src/align/oc_msg_spec.cpp
+  src/align/preprocessor.cpp
+  src/align/quick_align_again.cpp
+  src/align/same_func_call_params.cpp
+  src/align/stack.cpp
+  src/align/struct_initializers.cpp
+  src/align/tab_column.cpp
+  src/align/tools.cpp
+  src/align/trailing_comments.cpp
+  src/align/typedefs.cpp
+  src/align/var_def_brace.cpp
   src/args.cpp
   src/backup.cpp
-  src/brace_cleanup.cpp
   src/braces.cpp
   src/calculate_closing_brace_position.cpp
+  src/change_int_types.cpp
   src/chunk.cpp
   src/ChunkStack.cpp
-  src/combine.cpp
-  src/combine_fix_mark.cpp
-  src/combine_labels.cpp
-  src/combine_tools.cpp
-  src/combine_skip.cpp
   src/compat_posix.cpp
   src/compat_win32.cpp
-  src/cs_top_is_question.cpp
   src/detect.cpp
-  src/enum_cleanup.cpp
-  src/EnumStructUnionParser.cpp
-  src/EnumStructUnionParser.h
-  src/flag_braced_init_list.cpp
-  src/flag_decltype.cpp
-  src/flag_parens.cpp
-  src/frame_list.cpp
+  src/for_section.cpp
+  src/ifdef_over_whole_file.cpp
   src/indent.cpp
   src/keywords.cpp
   src/lang_pawn.cpp
+  src/language_names.cpp
   src/language_tools.cpp
   src/logger.cpp
   src/logmask.cpp
   src/log_rules.cpp
+  src/mark_change.cpp
   src/md5.cpp
-  src/newlines.cpp
+  src/newlines/add.cpp
+  src/newlines/after.cpp
+  src/newlines/annotations.cpp
+  src/newlines/before_return.cpp
+  src/newlines/between.cpp
+  src/newlines/blank_line.cpp
+  src/newlines/brace_pair.cpp
+  src/newlines/can_increase_nl.cpp
+  src/newlines/case.cpp
+  src/newlines/chunk_pos.cpp
+  src/newlines/class_colon_pos.cpp
+  src/newlines/cleanup.cpp
+  src/newlines/collapse_empty_body.cpp
+  src/newlines/cuddle_uncuddle.cpp
+  src/newlines/del_between.cpp
+  src/newlines/do_else.cpp
+  src/newlines/do_it_newlines_func_pre_blank_lines.cpp
+  src/newlines/double_newline.cpp
+  src/newlines/double_space_struct_enum_union.cpp
+  src/newlines/eat_start_end.cpp
+  src/newlines/end_newline.cpp
+  src/newlines/enum.cpp
+  src/newlines/force.cpp
+  src/newlines/func.cpp
+  src/newlines/func_pre_blank_lines.cpp
+  src/newlines/functions_remove_extra_blank_lines.cpp
+  src/newlines/get_closing_brace.cpp
+  src/newlines/iarf.cpp
+  src/newlines/if_for_while_switch.cpp
+  src/newlines/is_func_call_or_def.cpp
+  src/newlines/is_func_proto_group.cpp
+  src/newlines/is_var_def.cpp
+  src/newlines/min_after.cpp
+  src/newlines/namespace.cpp
+  src/newlines/oc_msg.cpp
+  src/newlines/one_liner.cpp
+  src/newlines/remove.cpp
+  src/newlines/remove_next_newlines.cpp
+  src/newlines/setup_newline_add.cpp
+  src/newlines/sparens.cpp
+  src/newlines/squeeze.cpp
+  src/newlines/struct_union.cpp
+  src/newlines/template.cpp
+  src/newlines/var_def_blk.cpp
   src/option.cpp
   src/options_for_QT.cpp
   src/output.cpp
-  src/parameter_pack_cleanup.cpp
   src/parens.cpp
   src/parent_for_pp.cpp
-  src/ParseFrame.cpp
+  src/parsing_frame.cpp
+  src/parsing_frame_stack.cpp
   src/pcf_flags.cpp
   src/punctuators.cpp
-  src/quick_align_again.cpp
+  src/reindent_line.cpp
   src/remove_duplicate_include.cpp
   src/remove_extra_returns.cpp
+  src/rewrite_infinite_loops.cpp
   src/semicolons.cpp
   src/sorting.cpp
   src/space.cpp
-  src/tokenize_cleanup.cpp
-  src/tokenize.cpp
+  src/token_is_within_trailing_return.cpp
+  src/tokenizer/brace_cleanup.cpp
+  src/tokenizer/check_double_brace_init.cpp
+  src/tokenizer/check_template.cpp
+  src/tokenizer/combine.cpp
+  src/tokenizer/combine_fix_mark.cpp
+  src/tokenizer/combine_labels.cpp
+  src/tokenizer/combine_skip.cpp
+  src/tokenizer/combine_tools.cpp
+  src/tokenizer/cs_top_is_question.cpp
+  src/tokenizer/enum_cleanup.cpp
+  src/tokenizer/EnumStructUnionParser.cpp
+  src/tokenizer/flag_braced_init_list.cpp
+  src/tokenizer/flag_decltype.cpp
+  src/tokenizer/flag_parens.cpp
+  src/tokenizer/mark_functor.cpp
+  src/tokenizer/mark_question_colon.cpp
+  src/tokenizer/parameter_pack_cleanup.cpp
+  src/tokenizer/tokenize_cleanup.cpp
+  src/tokenizer/tokenize.cpp
+  src/too_big_for_nl_max.cpp
+  src/token_enum.cpp
+  src/unc_ctype.cpp
   src/uncrustify.cpp
   src/uncrustify_emscripten.cpp
   src/uncrustify_types.cpp
@@ -327,86 +416,142 @@ set(uncrustify_sources
 
 set(uncrustify_headers
   src/add_space_table.h
-  src/align_add.h
-  src/align_asm_colon.h
-  src/align_assign.h
-  src/align_braced_init_list.h
-  src/align_func_params.h
-  src/align_func_proto.h
-  src/align.h
-  src/align_eigen_comma_init.h
-  src/align_init_brace.h
-  src/align_left_shift.h
-  src/align_log_al.h
-  src/align_nl_cont.h
-  src/align_oc_decl_colon.h
-  src/align_oc_msg_colons.h
-  src/align_oc_msg_spec.h
-  src/align_preprocessor.h
-  src/align_same_func_call_params.h
-  src/align_stack.h
-  src/align_struct_initializers.h
-  src/align_tab_column.h
-  src/align_tools.h
-  src/align_trailing_comments.h
-  src/align_typedefs.h
-  src/align_var_def_brace.h
+  src/align/add.h
+  src/align/align.h
+  src/align/asm_colon.h
+  src/align/assign.h
+  src/align/braced_init_list.h
+  src/align/eigen_comma_init.h
+  src/align/func_params.h
+  src/align/func_proto.h
+  src/align/init_brace.h
+  src/align/left_shift.h
+  src/align/log_al.h
+  src/align/nl_cont.h
+  src/align/oc_decl_colon.h
+  src/align/oc_msg_colons.h
+  src/align/oc_msg_spec.h
+  src/align/preprocessor.h
+  src/align/quick_align_again.h
+  src/align/same_func_call_params.h
+  src/align/span_num_resolve.h
+  src/align/stack.h
+  src/align/struct_initializers.h
+  src/align/tab_column.h
+  src/align/tools.h
+  src/align/trailing_comments.h
+  src/align/typedefs.h
+  src/align/var_def_brace.h
   src/args.h
   src/backup.h
   src/base_types.h
-  src/brace_cleanup.h
   src/braces.h
   src/calculate_closing_brace_position.h
+  src/change_int_types.h
   src/char_table.h
   src/chunk.h
   src/ChunkStack.h
-  src/combine.h
-  src/combine_fix_mark.h
-  src/combine_labels.h
-  src/combine_skip.h
-  src/combine_tools.h
   src/compat.h
-  src/cs_top_is_question.h
   src/detect.h
-  src/enum_cleanup.h
   src/enum_flags.h
   src/error_types.h
-  src/flag_braced_init_list.h
-  src/flag_decltype.h
-  src/flag_parens.h
-  src/frame_list.h
+  src/for_section.h
+  src/ifdef_over_whole_file.h
   src/indent.h
   src/keywords.h
   src/lang_pawn.h
+  src/language_names.h
   src/language_tools.h
   src/ListManager.h
   src/logger.h
   src/log_levels.h
   src/logmask.h
   src/log_rules.h
+  src/mark_change.h
   src/md5.h
-  src/newlines.h
+  src/newlines/add.h
+  src/newlines/after.h
+  src/newlines/annotations.h
+  src/newlines/before_return.h
+  src/newlines/between.h
+  src/newlines/blank_line.h
+  src/newlines/brace_pair.h
+  src/newlines/can_increase_nl.h
+  src/newlines/case.h
+  src/newlines/chunk_pos.h
+  src/newlines/class_colon_pos.h
+  src/newlines/cleanup.h
+  src/newlines/collapse_empty_body.h
+  src/newlines/cuddle_uncuddle.h
+  src/newlines/del_between.h
+  src/newlines/do_else.h
+  src/newlines/do_it_newlines_func_pre_blank_lines.h
+  src/newlines/double_newline.h
+  src/newlines/double_space_struct_enum_union.h
+  src/newlines/eat_start_end.h
+  src/newlines/end_newline.h
+  src/newlines/enum.h
+  src/newlines/force.h
+  src/newlines/func.h
+  src/newlines/functions_remove_extra_blank_lines.h
+  src/newlines/get_closing_brace.h
+  src/newlines/iarf.h
+  src/newlines/if_for_while_switch.h
+  src/newlines/is_func_call_or_def.h
+  src/newlines/is_func_proto_group.h
+  src/newlines/is_var_def.h
+  src/newlines/min_after.h
+  src/newlines/namespace.h
+  src/newlines/oc_msg.h
+  src/newlines/one_liner.h
+  src/newlines/remove.h
+  src/newlines/remove_next_newlines.h
+  src/newlines/setup_newline_add.h
+  src/newlines/squeeze.h
+  src/newlines/struct_union.h
+  src/newlines/template.h
+  src/newlines/var_def_blk.h
   src/option.h
   src/options_for_QT.h
   src/options.h
   src/output.h
-  src/parameter_pack_cleanup.h
   src/parens.h
   src/parent_for_pp.h
-  src/ParseFrame.h
+  src/parsing_frame.h
+  src/parsing_frame_stack.h
   src/pcf_flags.h
   src/prototypes.h
   src/punctuators.h
-  src/quick_align_again.h
+  src/reindent_line.h
   src/remove_duplicate_include.h
   src/remove_extra_returns.h
+  src/rewrite_infinite_loops.h
   src/semicolons.h
   src/sorting.h
   src/space.h
   src/symbols_table.h
   src/token_enum.h
-  src/tokenize_cleanup.h
-  src/tokenize.h
+  src/token_is_within_trailing_return.h
+  src/tokenizer/brace_cleanup.h
+  src/tokenizer/check_double_brace_init.h
+  src/tokenizer/check_template.h
+  src/tokenizer/combine_fix_mark.h
+  src/tokenizer/combine.h
+  src/tokenizer/combine_labels.h
+  src/tokenizer/combine_skip.h
+  src/tokenizer/combine_tools.h
+  src/tokenizer/cs_top_is_question.h
+  src/tokenizer/enum_cleanup.h
+  src/tokenizer/EnumStructUnionParser.h
+  src/tokenizer/flag_braced_init_list.h
+  src/tokenizer/flag_decltype.h
+  src/tokenizer/flag_parens.h
+  src/tokenizer/mark_functor.h
+  src/tokenizer/mark_question_colon.h
+  src/tokenizer/parameter_pack_cleanup.h
+  src/tokenizer/tokenize_cleanup.h
+  src/tokenizer/tokenize.h
+  src/too_big_for_nl_max.h
   src/unc_ctype.h
   src/uncrustify.h
   src/uncrustify_limits.h
@@ -433,23 +578,18 @@ set(uncrustify_docs
 add_executable(uncrustify ${uncrustify_sources} ${uncrustify_headers})
 add_dependencies(uncrustify generate_version_header)
 
-if(CMAKE_VERSION VERSION_LESS 2.8.10)
-  if(CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE)
-    # Multi-configuration or build type set
-    set_property(TARGET uncrustify APPEND PROPERTY
-      COMPILE_DEFINITIONS_DEBUG DEBUG
-    )
-  else()
-    # Single-configuration with no build type set
-    set_property(TARGET uncrustify APPEND PROPERTY
-      COMPILE_DEFINITIONS DEBUG
-    )
+if(WIN32)
+  target_sources(uncrustify PRIVATE src/uncrustify.rc)
+  if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    # cl.exe auto-defines _WIN64 for 64-bit targets; rc.exe does not.
+    set_source_files_properties(src/uncrustify.rc PROPERTIES COMPILE_DEFINITIONS "_WIN64")
   endif()
-else()
-  set_property(TARGET uncrustify APPEND PROPERTY
-    COMPILE_DEFINITIONS $<$<OR:$<CONFIG:Debug>,$<CONFIG:>>:DEBUG>
-  )
 endif()
+target_compile_features(uncrustify PUBLIC cxx_std_17)
+
+set_property(TARGET uncrustify APPEND PROPERTY
+  COMPILE_DEFINITIONS $<$<OR:$<CONFIG:Debug>,$<CONFIG:>>:DEBUG>
+)
 
 #
 # Generate uncrustify.1
@@ -485,15 +625,15 @@ endif(ENABLE_CODECOVERAGE)
 #
 add_custom_target(format-sources)
 foreach(source IN LISTS uncrustify_sources uncrustify_headers)
-  get_filename_component(source_name  ${source} NAME)
-  add_custom_target(format-${source_name}
+  string(REGEX REPLACE "[/:]" "_" source_target ${source})
+  add_custom_target(format-${source_target}
     COMMAND uncrustify
       -c forUncrustifySources.cfg
       -lCPP --no-backup ${source}
     COMMENT "Formatting ${source}"
     WORKING_DIRECTORY ${uncrustify_SOURCE_DIR}
   )
-  add_dependencies(format-sources format-${source_name})
+  add_dependencies(format-sources format-${source_target})
 endforeach()
 
 #
@@ -516,7 +656,10 @@ include(CPack)
 #
 # Install
 #
-if(MSVC)
+
+option(FORCE_GNUINSTALLDIRS "Force UNIX installation layout under MSVC" OFF)
+
+if(MSVC AND NOT FORCE_GNUINSTALLDIRS)
   install(TARGETS uncrustify DESTINATION ".")
   install(FILES ${uncrustify_docs}
     DESTINATION "."
@@ -548,9 +691,7 @@ endif()
 #
 # Uninstall
 #
-add_custom_target(uninstall "${CMAKE_COMMAND}" -P "${PROJECT_SOURCE_DIR}/cmake/uninstall.cmake")
-
-#
-# add to build the compile_commands.json file, to be used by clang-tidy
-#
-set(CMAKE_EXPORT_COMPILE_COMMANDS "ON" CACHE BOOL "to create the compile_commands.json file" FORCE)
+get_directory_property(hasParent PARENT_DIRECTORY)
+if(NOT hasParent)
+  add_custom_target(uninstall "${CMAKE_COMMAND}" -P "${PROJECT_SOURCE_DIR}/cmake/uninstall.cmake")
+endif()

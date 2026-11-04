@@ -120,9 +120,9 @@ static void indent_comment(Chunk *pc, int col);
 
 void indent_to_column(Chunk *pc, int column)
 {
-   if (column < pc->column)
+   if (column < pc->GetColumn())
    {
-      column = pc->column;
+      column = pc->GetColumn();
    }
    reindent_line(pc, column);
 }
@@ -139,16 +139,16 @@ void reindent_line(Chunk *pc, int column)
    int min_col;
 
    LOG_FMT(LINDLINE, "%s: %d] col %d on %.*s [%s] => %d\n",
-           __func__, pc->orig_line, pc->column, pc->len, pc->str,
-           get_token_name(pc->type), column);
+           __func__, pc->GetOrigLine(), pc->GetColumn(), pc->len, pc->GetStr(),
+           get_token_name(pc->GetType()), column);
 
-   if (column == pc->column)
+   if (column == pc->GetColumn())
    {
       return;
    }
-   col_delta  = column - pc->column;
-   pc->column = column;
-   min_col    = pc->column;
+   col_delta  = column - pc->GetColumn();
+   pc->SetColumn(column);
+   min_col    = pc->GetColumn();
 
    do
    {
@@ -156,26 +156,26 @@ void reindent_line(Chunk *pc, int column)
       pc       = pc->GetNext();
       if (pc != NULL)
       {
-         if (chunk_is_comment(pc))
+         if (pc->IsComment())
          {
-            pc->column = pc->orig_col;
-            if (pc->column < min_col)
+            pc->SetColumn(pc->GetOrigCol());
+            if (pc->GetColumn() < min_col)
             {
-               pc->column = min_col + 1;
+               pc->SetColumn(min_col + 1);
             }
             LOG_FMT(LINDLINE, "%s: set comment on line %d to col %d (orig %d)\n",
-                    __func__, pc->orig_line, pc->column, pc->orig_col);
+                    __func__, pc->GetOrigLine(), pc->GetColumn(), pc->GetOrigCol());
          }
          else
          {
-            pc->column += col_delta;
-            if (pc->column < min_col)
+            pc->SetColumn(pc->GetColumn() + col_delta);
+            if (pc->GetColumn() < min_col)
             {
-               pc->column = min_col;
+               pc->SetColumn(min_col);
             }
          }
       }
-   } while ((pc != NULL) && (pc->nl_count == 0));
+   } while ((pc != NULL) && (pc->GetNlCount() == 0));
 }
 
 
@@ -190,20 +190,20 @@ static void indent_pse_push(struct parse_frame& frm, Chunk *pc)
    static int ref = 0;
 
    /* check the stack depth */
-   if (frm.pse_tos < (int)ARRAY_SIZE(frm.pse))
+   if (frm.m_parenStack_tos < (int)ARRAY_SIZE(frm.m_parenStack))
    {
       /* Bump up the index and initialize it */
       frm.pse_tos++;
-      memset(&frm.pse[frm.pse_tos], 0, sizeof(frm.pse[frm.pse_tos]));
+      memset(&frm.m_parenStack[frm.m_parenStack_tos], 0, sizeof(frm.m_parenStack[frm.m_parenStack_tos]));
 
       LOG_FMT(LINDPSE, "%4d] OPEN  [%d,%s] level=%d\n",
-              pc->orig_line, frm.pse_tos, get_token_name(pc->type), pc->level);
+              pc->GetOrigLine(), frm.pse_tos, get_token_name(pc->GetType()), pc->GetLevel());
 
-      frm.pse[frm.pse_tos].type       = pc->type;
-      frm.pse[frm.pse_tos].level      = pc->level;
-      frm.pse[frm.pse_tos].open_line  = pc->orig_line;
-      frm.pse[frm.pse_tos].ref        = ++ref;
-      frm.pse[frm.pse_tos].in_preproc = (pc->flags & PCF_IN_PREPROC) != 0;
+      frm.m_parenStack[frm.m_parenStack_tos].type       = pc->GetType();
+      frm.m_parenStack[frm.m_parenStack_tos].level      = pc->GetLevel();
+      frm.m_parenStack[frm.m_parenStack_tos].open_line  = pc->GetOrigLine();
+      frm.m_parenStack[frm.m_parenStack_tos].ref        = ++ref;
+      frm.m_parenStack[frm.m_parenStack_tos].in_preproc = (pc->GetFlags() & PCF_IN_PREPROC) != 0;
    }
 }
 
@@ -222,18 +222,18 @@ static void indent_pse_pop(struct parse_frame& frm, Chunk *pc)
       if (pc != NULL)
       {
          LOG_FMT(LINDPSE, "%4d] CLOSE [%d,%s] on %s, started on line %d, level=%d/%d\n",
-                 pc->orig_line, frm.pse_tos,
-                 get_token_name(frm.pse[frm.pse_tos].type),
-                 get_token_name(pc->type),
-                 frm.pse[frm.pse_tos].open_line,
-                 frm.pse[frm.pse_tos].level,
-                 pc->level);
+                 pc->GetOrigLine(), frm.pse_tos,
+                 get_token_name(frm.m_parenStack[frm.m_parenStack_tos].type),
+                 get_token_name(pc->GetType()),
+                 frm.m_parenStack[frm.m_parenStack_tos].open_line,
+                 frm.m_parenStack[frm.m_parenStack_tos].level,
+                 pc->GetLevel());
       }
       else
       {
          LOG_FMT(LINDPSE, " EOF] CLOSE [%d,%s], started on line %d\n",
-                 frm.pse_tos, get_token_name(frm.pse[frm.pse_tos].type),
-                 frm.pse[frm.pse_tos].open_line);
+                 frm.m_parenStack_tos, get_token_name(frm.m_parenStack[frm.m_parenStack_tos].type),
+                 frm.m_parenStack[frm.m_parenStack_tos].open_line);
       }
       frm.pse_tos--;
    }
@@ -292,26 +292,26 @@ void indent_text(void)
    memset(&frm, 0, sizeof(frm));
 
    /* dummy top-level entry */
-   frm.pse[0].indent     = 1;
-   frm.pse[0].indent_tmp = 1;
-   frm.pse[0].type       = CT_EOF;
+   frm.m_parenStack[0].indent     = 1;
+   frm.m_parenStack[0].indent_tmp = 1;
+   frm.m_parenStack[0].type       = CT_EOF;
 
    pc = Chunk::GetHead();
    while (pc != NULL)
    {
       /* Handle proprocessor transitions */
       was_preproc = in_preproc;
-      in_preproc  = (pc->flags & PCF_IN_PREPROC) != 0;
+      in_preproc  = (pc->GetFlags() & PCF_IN_PREPROC) != 0;
 
       if (cpd.settings[UO_indent_brace_parent].b)
       {
-         parent_token_indent = token_indent(pc->parent_type);
+         parent_token_indent = token_indent(pc->GetParentType());
       }
 
       /* Clean up after a #define */
       if (!in_preproc)
       {
-         while ((frm.pse_tos > 0) && frm.pse[frm.pse_tos].in_preproc)
+         while ((frm.m_parenStack_tos > 0) && frm.m_parenStack[frm.m_parenStack_tos].in_preproc)
          {
             indent_pse_pop(frm, pc);
          }
@@ -326,14 +326,14 @@ void indent_text(void)
             frm.level++;
             indent_pse_push(frm, pc);
 
-            frm.pse[frm.pse_tos].indent     = 1 + indent_size;
-            frm.pse[frm.pse_tos].indent_tmp = frm.pse[frm.pse_tos].indent;
+            frm.m_parenStack[frm.m_parenStack_tos].indent     = 1 + indent_size;
+            frm.m_parenStack[frm.m_parenStack_tos].indent_tmp = frm.m_parenStack[frm.m_parenStack_tos].indent;
          }
       }
 
       if ((cout_col > 0) &&
-          (chunk_is_semicolon(pc) ||
-           (pc->level < cout_level)))
+          (pc->IsSemicolon() ||
+           (pc->GetLevel() < cout_level)))
       {
          cout_col   = 0;
          cout_level = 0;
@@ -351,19 +351,19 @@ void indent_text(void)
          /* End anything that drops a level
           * REVISIT: not sure about the preproc check
           */
-         if (!chunk_is_newline(pc) &&
-             !chunk_is_comment(pc) &&
-             ((pc->flags & PCF_IN_PREPROC) == 0) &&
-             (frm.pse[frm.pse_tos].level > pc->level))
+         if (!pc->IsNewline() &&
+             !pc->IsComment() &&
+             ((pc->GetFlags() & PCF_IN_PREPROC) == 0) &&
+             (frm.m_parenStack[frm.m_parenStack_tos].level > pc->GetLevel()))
          {
             indent_pse_pop(frm, pc);
          }
 
-         if (frm.pse[frm.pse_tos].level == pc->level)
+         if (frm.m_parenStack[frm.m_parenStack_tos].level == pc->GetLevel())
          {
             /* process virtual braces closes (no text output) */
-            if ((pc->type == CT_VBRACE_CLOSE) &&
-                (frm.pse[frm.pse_tos].type == CT_VBRACE_OPEN))
+            if ((pc->GetType() == CT_VBRACE_CLOSE) &&
+                (frm.m_parenStack[frm.m_parenStack_tos].type == CT_VBRACE_OPEN))
             {
                indent_pse_pop(frm, pc);
                frm.level--;
@@ -371,62 +371,62 @@ void indent_text(void)
             }
 
             /* End any assign operations with a semicolon on the same level */
-            if ((frm.pse[frm.pse_tos].type == CT_ASSIGN) &&
-                (chunk_is_semicolon(pc) ||
-                 (pc->type == CT_COMMA) ||
-                 (pc->type == CT_BRACE_OPEN)))
+            if ((frm.m_parenStack[frm.m_parenStack_tos].type == CT_ASSIGN) &&
+                (pc->IsSemicolon() ||
+                 (pc->GetType() == CT_COMMA) ||
+                 (pc->GetType() == CT_BRACE_OPEN)))
             {
                indent_pse_pop(frm, pc);
             }
 
             /* End any CPP class colon crap */
-            if ((frm.pse[frm.pse_tos].type == CT_CLASS_COLON) &&
-                ((pc->type == CT_BRACE_OPEN) ||
-                 chunk_is_semicolon(pc)))
+            if ((frm.m_parenStack[frm.m_parenStack_tos].type == CT_CLASS_COLON) &&
+                ((pc->GetType() == CT_BRACE_OPEN) ||
+                 pc->IsSemicolon()))
             {
                indent_pse_pop(frm, pc);
             }
 
             /* a case is ended with another case or a close brace */
-            if ((frm.pse[frm.pse_tos].type == CT_CASE) &&
-                ((pc->type == CT_BRACE_CLOSE) ||
-                 (pc->type == CT_CASE)))
+            if ((frm.m_parenStack[frm.m_parenStack_tos].type == CT_CASE) &&
+                ((pc->GetType() == CT_BRACE_CLOSE) ||
+                 (pc->GetType() == CT_CASE)))
             {
                indent_pse_pop(frm, pc);
             }
 
             /* a return is ended with a semicolon */
-            if ((frm.pse[frm.pse_tos].type == CT_RETURN) &&
-                chunk_is_semicolon(pc))
+            if ((frm.m_parenStack[frm.m_parenStack_tos].type == CT_RETURN) &&
+                pc->IsSemicolon())
             {
                indent_pse_pop(frm, pc);
             }
 
             /* Close out parens and squares */
-            if ((frm.pse[frm.pse_tos].type == (pc->type - 1)) &&
-                ((pc->type == CT_PAREN_CLOSE) ||
-                 (pc->type == CT_SPAREN_CLOSE) ||
-                 (pc->type == CT_FPAREN_CLOSE) ||
-                 (pc->type == CT_SQUARE_CLOSE) ||
-                 (pc->type == CT_ANGLE_CLOSE)))
+            if ((frm.m_parenStack[frm.m_parenStack_tos].type == (pc->GetType() - 1)) &&
+                ((pc->GetType() == CT_PAREN_CLOSE) ||
+                 (pc->GetType() == CT_SPAREN_CLOSE) ||
+                 (pc->GetType() == CT_FPAREN_CLOSE) ||
+                 (pc->GetType() == CT_SQUARE_CLOSE) ||
+                 (pc->GetType() == CT_ANGLE_CLOSE)))
             {
                indent_pse_pop(frm, pc);
-               frm.paren_count--;
+               frm.SetParenCount(frm.GetParenCount() - 1);
             }
          }
       } while (old_pse_tos > frm.pse_tos);
 
       /* Grab a copy of the current indent */
-      indent_column = frm.pse[frm.pse_tos].indent_tmp;
+      indent_column = frm.m_parenStack[frm.m_parenStack_tos].indent_tmp;
 
-      if (!chunk_is_newline(pc) && !chunk_is_comment(pc))
+      if (!pc->IsNewline() && !pc->IsComment())
       {
          LOG_FMT(LINDPC, " -=[ %.*s ]=- top=%d %s %d/%d\n",
-                 pc->len, pc->str,
+                 pc->len, pc->GetStr(),
                  frm.pse_tos,
-                 get_token_name(frm.pse[frm.pse_tos].type),
-                 frm.pse[frm.pse_tos].indent_tmp,
-                 frm.pse[frm.pse_tos].indent);
+                 get_token_name(frm.m_parenStack[frm.m_parenStack_tos].type),
+                 frm.m_parenStack[frm.m_parenStack_tos].indent_tmp,
+                 frm.m_parenStack[frm.m_parenStack_tos].indent);
       }
 
       /**
@@ -445,9 +445,9 @@ void indent_text(void)
        *  - return
        */
 
-      if (pc->type == CT_BRACE_CLOSE)
+      if (pc->GetType() == CT_BRACE_CLOSE)
       {
-         if (frm.pse[frm.pse_tos].type == CT_BRACE_OPEN)
+         if (frm.m_parenStack[frm.m_parenStack_tos].type == CT_BRACE_OPEN)
          {
             indent_pse_pop(frm, pc);
             frm.level--;
@@ -456,86 +456,86 @@ void indent_text(void)
             if (!cpd.settings[UO_indent_braces].b &&
                 (parent_token_indent == 0))
             {
-               indent_column = frm.pse[frm.pse_tos].indent_tmp;
+               indent_column = frm.m_parenStack[frm.m_parenStack_tos].indent_tmp;
             }
 
-            if ((pc->parent_type == CT_IF) ||
-                (pc->parent_type == CT_ELSE) ||
-                (pc->parent_type == CT_ELSEIF) ||
-                (pc->parent_type == CT_DO) ||
-                (pc->parent_type == CT_WHILE) ||
-                (pc->parent_type == CT_SWITCH) ||
-                (pc->parent_type == CT_FOR))
+            if ((pc->GetParentType() == CT_IF) ||
+                (pc->GetParentType() == CT_ELSE) ||
+                (pc->GetParentType() == CT_ELSEIF) ||
+                (pc->GetParentType() == CT_DO) ||
+                (pc->GetParentType() == CT_WHILE) ||
+                (pc->GetParentType() == CT_SWITCH) ||
+                (pc->GetParentType() == CT_FOR))
             {
                indent_column += cpd.settings[UO_indent_brace].n;
             }
          }
       }
-      else if (pc->type == CT_VBRACE_OPEN)
+      else if (pc->GetType() == CT_VBRACE_OPEN)
       {
          frm.level++;
          indent_pse_push(frm, pc);
 
-         frm.pse[frm.pse_tos].indent     = frm.pse[frm.pse_tos - 1].indent + indent_size;
-         frm.pse[frm.pse_tos].indent_tmp = frm.pse[frm.pse_tos].indent;
+         frm.m_parenStack[frm.m_parenStack_tos].indent     = frm.m_parenStack[frm.m_parenStack_tos - 1].indent + indent_size;
+         frm.m_parenStack[frm.m_parenStack_tos].indent_tmp = frm.m_parenStack[frm.m_parenStack_tos].indent;
 
          /* Always indent on virtual braces */
-         indent_column = frm.pse[frm.pse_tos].indent_tmp;
+         indent_column = frm.m_parenStack[frm.m_parenStack_tos].indent_tmp;
       }
-      else if (pc->type == CT_BRACE_OPEN)
+      else if (pc->GetType() == CT_BRACE_OPEN)
       {
          frm.level++;
          indent_pse_push(frm, pc);
 
-         if (frm.paren_count != 0)
+         if (frm.GetParenCount() != 0)
          {
             /* We are inside ({ ... }) -- indent one tab from the paren */
-            frm.pse[frm.pse_tos].indent = frm.pse[frm.pse_tos - 1].indent_tmp + indent_size;
+            frm.m_parenStack[frm.m_parenStack_tos].indent = frm.m_parenStack[frm.m_parenStack_tos - 1].indent_tmp + indent_size;
          }
          else
          {
             /* Use the prev indent level + indent_size. */
-            frm.pse[frm.pse_tos].indent = frm.pse[frm.pse_tos - 1].indent + indent_size;
+            frm.m_parenStack[frm.m_parenStack_tos].indent = frm.m_parenStack[frm.m_parenStack_tos - 1].indent + indent_size;
 
             /* If this brace is part of a statement, bump it out by indent_brace */
-            if ((pc->parent_type == CT_IF) ||
-                (pc->parent_type == CT_ELSE) ||
-                (pc->parent_type == CT_ELSEIF) ||
-                (pc->parent_type == CT_DO) ||
-                (pc->parent_type == CT_WHILE) ||
-                (pc->parent_type == CT_SWITCH) ||
-                (pc->parent_type == CT_FOR))
+            if ((pc->GetParentType() == CT_IF) ||
+                (pc->GetParentType() == CT_ELSE) ||
+                (pc->GetParentType() == CT_ELSEIF) ||
+                (pc->GetParentType() == CT_DO) ||
+                (pc->GetParentType() == CT_WHILE) ||
+                (pc->GetParentType() == CT_SWITCH) ||
+                (pc->GetParentType() == CT_FOR))
             {
                if (parent_token_indent != 0)
                {
-                  frm.pse[frm.pse_tos].indent += parent_token_indent - indent_size;
+                  frm.m_parenStack[frm.m_parenStack_tos].indent += parent_token_indent - indent_size;
                }
                else
                {
-                  frm.pse[frm.pse_tos].indent += cpd.settings[UO_indent_brace].n;
+                  frm.m_parenStack[frm.m_parenStack_tos].indent += cpd.settings[UO_indent_brace].n;
                   indent_column += cpd.settings[UO_indent_brace].n;
                }
             }
-            else if (pc->parent_type == CT_CASE)
+            else if (pc->GetParentType() == CT_CASE)
             {
                /* The indent_case_brace setting affects the parent CT_CASE */
-               frm.pse[frm.pse_tos].indent_tmp += cpd.settings[UO_indent_case_brace].n;
-               frm.pse[frm.pse_tos].indent     += cpd.settings[UO_indent_case_brace].n;
+               frm.m_parenStack[frm.m_parenStack_tos].indent_tmp += cpd.settings[UO_indent_case_brace].n;
+               frm.m_parenStack[frm.m_parenStack_tos].indent     += cpd.settings[UO_indent_case_brace].n;
             }
-            else if ((pc->parent_type == CT_CLASS) && !cpd.settings[UO_indent_class].b)
+            else if ((pc->GetParentType() == CT_CLASS) && !cpd.settings[UO_indent_class].b)
             {
-               frm.pse[frm.pse_tos].indent -= indent_size;
+               frm.m_parenStack[frm.m_parenStack_tos].indent -= indent_size;
             }
-            else if ((pc->parent_type == CT_NAMESPACE) && !cpd.settings[UO_indent_namespace].b)
+            else if ((pc->GetParentType() == CT_NAMESPACE) && !cpd.settings[UO_indent_namespace].b)
             {
-               frm.pse[frm.pse_tos].indent -= indent_size;
+               frm.m_parenStack[frm.m_parenStack_tos].indent -= indent_size;
             }
          }
 
-         if ((pc->flags & PCF_DONT_INDENT) != 0)
+         if ((pc->GetFlags() & PCF_DONT_INDENT) != 0)
          {
-            frm.pse[frm.pse_tos].indent = pc->column;
-            indent_column = pc->column;
+            frm.m_parenStack[frm.m_parenStack_tos].indent = pc->GetColumn();
+            indent_column = pc->GetColumn();
          }
          else
          {
@@ -547,35 +547,35 @@ void indent_text(void)
              *   b--; };
              */
             next = pc->GetNextNcNnl();
-            if (!chunk_is_newline_between(pc, next))
+            if (!pc->IsNewlineBetween(next))
             {
-               frm.pse[frm.pse_tos].indent = next->column;
+               frm.m_parenStack[frm.m_parenStack_tos].indent = next->GetColumn();
             }
-            frm.pse[frm.pse_tos].indent_tmp = frm.pse[frm.pse_tos].indent;
-            frm.pse[frm.pse_tos].open_line  = pc->orig_line;
+            frm.m_parenStack[frm.m_parenStack_tos].indent_tmp = frm.m_parenStack[frm.m_parenStack_tos].indent;
+            frm.m_parenStack[frm.m_parenStack_tos].open_line  = pc->GetOrigLine();
 
             /* Update the indent_column if needed */
             if (cpd.settings[UO_indent_braces].n ||
                 (parent_token_indent != 0))
             {
-               indent_column = frm.pse[frm.pse_tos].indent_tmp;
+               indent_column = frm.m_parenStack[frm.m_parenStack_tos].indent_tmp;
             }
          }
       }
-      else if (pc->type == CT_CASE)
+      else if (pc->GetType() == CT_CASE)
       {
          /* Start a case - indent UO_indent_switch_case from the switch level */
-         tmp = frm.pse[frm.pse_tos].indent + cpd.settings[UO_indent_switch_case].n;
+         tmp = frm.m_parenStack[frm.m_parenStack_tos].indent + cpd.settings[UO_indent_switch_case].n;
 
          indent_pse_push(frm, pc);
 
-         frm.pse[frm.pse_tos].indent     = tmp;
-         frm.pse[frm.pse_tos].indent_tmp = tmp - indent_size;
+         frm.m_parenStack[frm.m_parenStack_tos].indent     = tmp;
+         frm.m_parenStack[frm.m_parenStack_tos].indent_tmp = tmp - indent_size;
 
          /* Always set on case statements */
-         indent_column = frm.pse[frm.pse_tos].indent_tmp;
+         indent_column = frm.m_parenStack[frm.m_parenStack_tos].indent_tmp;
       }
-      else if (pc->type == CT_LABEL)
+      else if (pc->GetType() == CT_LABEL)
       {
          /* Labels get sent to the left or backed up */
          if (cpd.settings[UO_indent_label].n > 0)
@@ -584,64 +584,64 @@ void indent_text(void)
          }
          else
          {
-            indent_column = frm.pse[frm.pse_tos].indent +
+            indent_column = frm.m_parenStack[frm.m_parenStack_tos].indent +
                             cpd.settings[UO_indent_label].n;
          }
       }
-      else if (pc->type == CT_CLASS_COLON)
+      else if (pc->GetType() == CT_CLASS_COLON)
       {
          /* just indent one level */
          indent_pse_push(frm, pc);
-         frm.pse[frm.pse_tos].indent     = frm.pse[frm.pse_tos - 1].indent_tmp + indent_size;
-         frm.pse[frm.pse_tos].indent_tmp = frm.pse[frm.pse_tos].indent;
+         frm.m_parenStack[frm.m_parenStack_tos].indent     = frm.m_parenStack[frm.m_parenStack_tos - 1].indent_tmp + indent_size;
+         frm.m_parenStack[frm.m_parenStack_tos].indent_tmp = frm.m_parenStack[frm.m_parenStack_tos].indent;
 
-         indent_column = frm.pse[frm.pse_tos].indent_tmp;
+         indent_column = frm.m_parenStack[frm.m_parenStack_tos].indent_tmp;
 
          if (cpd.settings[UO_indent_class_colon].b)
          {
             prev = pc->GetPrev();
-            if (chunk_is_newline(prev))
+            if (prev->IsNewline())
             {
-               frm.pse[frm.pse_tos].indent += 2;
+               frm.m_parenStack[frm.m_parenStack_tos].indent += 2;
                /* don't change indent of current line */
             }
          }
       }
-      else if ((pc->type == CT_PAREN_OPEN) ||
-               (pc->type == CT_SPAREN_OPEN) ||
-               (pc->type == CT_FPAREN_OPEN) ||
-               (pc->type == CT_SQUARE_OPEN) ||
-               (pc->type == CT_ANGLE_OPEN))
+      else if ((pc->GetType() == CT_PAREN_OPEN) ||
+               (pc->GetType() == CT_SPAREN_OPEN) ||
+               (pc->GetType() == CT_FPAREN_OPEN) ||
+               (pc->GetType() == CT_SQUARE_OPEN) ||
+               (pc->GetType() == CT_ANGLE_OPEN))
       {
          /* Open parens and squares - never update indent_column */
          indent_pse_push(frm, pc);
-         frm.pse[frm.pse_tos].indent = pc->column + pc->len;
+         frm.m_parenStack[frm.m_parenStack_tos].indent = pc->GetColumn() + pc->len;
 
          if (cpd.settings[UO_indent_func_call_param].b &&
-             (pc->type == CT_FPAREN_OPEN) &&
-             (pc->parent_type == CT_FUNC_CALL))
+             (pc->GetType() == CT_FPAREN_OPEN) &&
+             (pc->GetParentType() == CT_FUNC_CALL))
          {
-            frm.pse[frm.pse_tos].indent = frm.pse[frm.pse_tos - 1].indent + indent_size;
+            frm.m_parenStack[frm.m_parenStack_tos].indent = frm.m_parenStack[frm.m_parenStack_tos - 1].indent + indent_size;
          }
 
          if ((chunk_is_str(pc, "(", 1) && !cpd.settings[UO_indent_paren_nl].b) ||
              (chunk_is_str(pc, "[", 1) && !cpd.settings[UO_indent_square_nl].b))
          {
             next = pc->GetNextNc();
-            if (chunk_is_newline(next))
+            if (next->IsNewline())
             {
                int sub = 1;
-               if (frm.pse[frm.pse_tos - 1].type == CT_ASSIGN)
+               if (frm.m_parenStack[frm.m_parenStack_tos - 1].type == CT_ASSIGN)
                {
                   sub = 2;
                }
-               frm.pse[frm.pse_tos].indent = frm.pse[frm.pse_tos - sub].indent + indent_size;
+               frm.m_parenStack[frm.m_parenStack_tos].indent = frm.m_parenStack[frm.m_parenStack_tos - sub].indent + indent_size;
             }
          }
-         frm.pse[frm.pse_tos].indent_tmp = frm.pse[frm.pse_tos].indent;
-         frm.paren_count++;
+         frm.m_parenStack[frm.m_parenStack_tos].indent_tmp = frm.m_parenStack[frm.m_parenStack_tos].indent;
+         frm.SetParenCount(frm.GetParenCount() + 1);
       }
-      else if (pc->type == CT_ASSIGN)
+      else if (pc->GetType() == CT_ASSIGN)
       {
          /**
           * if there is a newline after the '=', just indent one level,
@@ -652,33 +652,33 @@ void indent_text(void)
          if (next != NULL)
          {
             indent_pse_push(frm, pc);
-            if (chunk_is_newline(next))
+            if (next->IsNewline())
             {
-               frm.pse[frm.pse_tos].indent = frm.pse[frm.pse_tos - 1].indent_tmp + indent_size;
+               frm.m_parenStack[frm.m_parenStack_tos].indent = frm.m_parenStack[frm.m_parenStack_tos - 1].indent_tmp + indent_size;
             }
             else
             {
-               frm.pse[frm.pse_tos].indent = pc->column + pc->len + 1;
+               frm.m_parenStack[frm.m_parenStack_tos].indent = pc->GetColumn() + pc->len + 1;
             }
-            frm.pse[frm.pse_tos].indent_tmp = frm.pse[frm.pse_tos].indent;
+            frm.m_parenStack[frm.m_parenStack_tos].indent_tmp = frm.m_parenStack[frm.m_parenStack_tos].indent;
          }
       }
-      else if (pc->type == CT_RETURN)
+      else if (pc->GetType() == CT_RETURN)
       {
          /* don't count returns inside a () or [] */
-         if (pc->level == pc->brace_level)
+         if (pc->GetLevel() == pc->GetBraceLevel())
          {
             indent_pse_push(frm, pc);
-            frm.pse[frm.pse_tos].indent     = frm.pse[frm.pse_tos - 1].indent + pc->len + 1;
-            frm.pse[frm.pse_tos].indent_tmp = frm.pse[frm.pse_tos - 1].indent;
+            frm.m_parenStack[frm.m_parenStack_tos].indent     = frm.m_parenStack[frm.m_parenStack_tos - 1].indent + pc->len + 1;
+            frm.m_parenStack[frm.m_parenStack_tos].indent_tmp = frm.m_parenStack[frm.m_parenStack_tos - 1].indent;
          }
       }
       else if (chunk_is_str(pc, "<<", 2))
       {
          if (cout_col == 0)
          {
-            cout_col   = pc->column;
-            cout_level = pc->level;
+            cout_col   = pc->GetColumn();
+            cout_level = pc->GetLevel();
          }
       }
       else
@@ -690,7 +690,7 @@ void indent_text(void)
       /**
        * Indent the line if needed
        */
-      if (did_newline && !chunk_is_newline(pc) && (pc->len != 0))
+      if (did_newline && !pc->IsNewline() && (pc->len != 0))
       {
          /**
           * Check for special continuations.
@@ -699,59 +699,59 @@ void indent_text(void)
           */
 
          prev = pc->GetPrevNcNnl();
-         if ((pc->type == CT_MEMBER) ||
-             (pc->type == CT_DC_MEMBER) ||
+         if ((pc->GetType() == CT_MEMBER) ||
+             (pc->GetType() == CT_DC_MEMBER) ||
              ((prev != NULL) &&
-              ((prev->type == CT_MEMBER) ||
-               (prev->type == CT_DC_MEMBER))))
+              ((prev->GetType() == CT_MEMBER) ||
+               (prev->GetType() == CT_DC_MEMBER))))
          {
             tmp = cpd.settings[UO_indent_member].n + indent_column;
             LOG_FMT(LINDENT, "%s: %d] member => %d\n",
-                    __func__, pc->orig_line, tmp);
+                    __func__, pc->GetOrigLine(), tmp);
             reindent_line(pc, tmp);
          }
          else if (chunk_is_str(pc, "<<", 2) && (cout_col > 0))
          {
             LOG_FMT(LINDENT, "%s: %d] cout_col => %d\n",
-                    __func__, pc->orig_line, cout_col);
+                    __func__, pc->GetOrigLine(), cout_col);
             reindent_line(pc, cout_col);
          }
          else if ((vardefcol > 0) &&
-                  (pc->type == CT_WORD) &&
-                  ((pc->flags & PCF_VAR_DEF) != 0) &&
-                  (prev != NULL) && (prev->type == CT_COMMA))
+                  (pc->GetType() == CT_WORD) &&
+                  ((pc->GetFlags() & PCF_VAR_DEF) != 0) &&
+                  (prev != NULL) && (prev->GetType() == CT_COMMA))
          {
             LOG_FMT(LINDENT, "%s: %d] Vardefcol => %d\n",
-                    __func__, pc->orig_line, vardefcol);
+                    __func__, pc->GetOrigLine(), vardefcol);
             reindent_line(pc, vardefcol);
          }
-         else if ((pc->type == CT_STRING) && (prev->type == CT_STRING) &&
+         else if ((pc->GetType() == CT_STRING) && (prev->GetType() == CT_STRING) &&
                   cpd.settings[UO_indent_align_string].b)
          {
             LOG_FMT(LINDENT, "%s: %d] String => %d\n",
-                    __func__, pc->orig_line, prev->column);
-            reindent_line(pc, prev->column);
+                    __func__, pc->GetOrigLine(), prev->GetColumn());
+            reindent_line(pc, prev->GetColumn());
          }
-         else if (chunk_is_comment(pc))
+         else if (pc->IsComment())
          {
             LOG_FMT(LINDENT, "%s: %d] comment => %d\n",
-                    __func__, pc->orig_line, frm.pse[frm.pse_tos].indent_tmp);
-            indent_comment(pc, frm.pse[frm.pse_tos].indent_tmp);
+                    __func__, pc->GetOrigLine(), frm.m_parenStack[frm.m_parenStack_tos].indent_tmp);
+            indent_comment(pc, frm.m_parenStack[frm.m_parenStack_tos].indent_tmp);
          }
-         else if (pc->type == CT_PREPROC)
+         else if (pc->GetType() == CT_PREPROC)
          {
             /* Preprocs are always in column 1. See indent_preproc() */
-            if (pc->column != 1)
+            if (pc->GetColumn() != 1)
             {
                reindent_line(pc, 1);
             }
          }
          else
          {
-            if (pc->column != indent_column)
+            if (pc->GetColumn() != indent_column)
             {
                LOG_FMT(LINDENT, "%s: %d] indent => %d [%.*s]\n",
-                       __func__, pc->orig_line, indent_column, pc->len, pc->str);
+                       __func__, pc->GetOrigLine(), indent_column, pc->len, pc->GetStr());
                reindent_line(pc, indent_column);
             }
          }
@@ -761,40 +761,40 @@ void indent_text(void)
       /**
        * Handle variable definition continuation indenting
        */
-      if ((pc->type == CT_WORD) &&
-          ((pc->flags & PCF_IN_FCN_DEF) == 0) &&
-          ((pc->flags & PCF_VAR_1ST_DEF) == PCF_VAR_1ST_DEF))
+      if ((pc->GetType() == CT_WORD) &&
+          ((pc->GetFlags() & PCF_IN_FCN_DEF) == 0) &&
+          ((pc->GetFlags() & PCF_VAR_1ST_DEF) == PCF_VAR_1ST_DEF))
       {
-         vardefcol = pc->column;
+         vardefcol = pc->GetColumn();
       }
-      if (chunk_is_semicolon(pc) ||
-          ((pc->type == CT_BRACE_OPEN) && (pc->parent_type == CT_FUNCTION)))
+      if (pc->IsSemicolon() ||
+          ((pc->GetType() == CT_BRACE_OPEN) && (pc->GetParentType() == CT_FUNCTION)))
       {
          vardefcol = 0;
       }
 
       /* if we hit a newline, reset indent_tmp */
-      if (chunk_is_newline(pc) ||
-          (pc->type == CT_COMMENT_MULTI) ||
-          (pc->type == CT_COMMENT_CPP))
+      if (pc->IsNewline() ||
+          (pc->GetType() == CT_COMMENT_MULTI) ||
+          (pc->GetType() == CT_COMMENT_CPP))
       {
-         frm.pse[frm.pse_tos].indent_tmp = frm.pse[frm.pse_tos].indent;
+         frm.m_parenStack[frm.m_parenStack_tos].indent_tmp = frm.m_parenStack[frm.m_parenStack_tos].indent;
 
          /**
           * Handle the case of a multi-line #define w/o anything on the
           * first line (indent_tmp will be 1 or 0)
           */
-         if ((pc->type == CT_NL_CONT) &&
-             (frm.pse[frm.pse_tos].indent_tmp <= indent_size))
+         if ((pc->GetType() == CT_NL_CONT) &&
+             (frm.m_parenStack[frm.m_parenStack_tos].indent_tmp <= indent_size))
          {
-            frm.pse[frm.pse_tos].indent_tmp = indent_size + 1;
+            frm.m_parenStack[frm.m_parenStack_tos].indent_tmp = indent_size + 1;
          }
 
          /* Get ready to indent the next item */
          did_newline = true;
       }
 
-      if (!chunk_is_comment(pc) && !chunk_is_newline(pc))
+      if (!pc->IsComment() && !pc->IsNewline())
       {
          prev = pc;
       }
@@ -802,7 +802,7 @@ void indent_text(void)
    }
 
    /* Throw out any stuff inside a preprocessor - no need to warn */
-   while ((frm.pse_tos > 0) && frm.pse[frm.pse_tos].in_preproc)
+   while ((frm.m_parenStack_tos > 0) && frm.m_parenStack[frm.m_parenStack_tos].in_preproc)
    {
       indent_pse_pop(frm, pc);
    }
@@ -810,8 +810,8 @@ void indent_text(void)
    for (idx = 1; idx <= frm.pse_tos; idx++)
    {
       LOG_FMT(LWARN, "%s:%d Unmatched %s\n",
-              cpd.filename, frm.pse[idx].open_line,
-              get_token_name(frm.pse[idx].type));
+              cpd.filename, frm.m_parenStack[idx].open_line,
+              get_token_name(frm.m_parenStack[idx].type));
       cpd.error_count++;
    }
 }
@@ -827,16 +827,16 @@ static bool single_line_comment_indent_rule_applies(Chunk *start)
 {
    Chunk *pc      = start;
    int     nl_count = 0;
-   if (!chunk_is_single_line_comment(pc))
+   if (!pc->IsSingleLineComment())
    {
       return(false);
    }
    /* scan forward, if only single newlines and comments before next line of code, we want to apply */
    while ((pc = pc->GetNext()) != NULL)
    {
-      if (chunk_is_newline(pc))
+      if (pc->IsNewline())
       {
-         if (nl_count > 0 || pc->nl_count > 1)
+         if (nl_count > 0 || pc->GetNlCount() > 1)
          {
             return(false);
          }
@@ -846,11 +846,11 @@ static bool single_line_comment_indent_rule_applies(Chunk *start)
       else
       {
          nl_count = 0;
-         if (!chunk_is_single_line_comment(pc))
+         if (!pc->IsSingleLineComment())
          {
             /* here we check for things to run into that we wouldn't want to indent the comment for */
             /* for example, non-single line comment, closing brace */
-            if (chunk_is_comment(pc) || chunk_is_closing_brace(pc))
+            if (pc->IsComment() || pc->IsBraceClose())
             {
                return(false);
             }
@@ -898,58 +898,58 @@ static void indent_comment(Chunk *pc, int col)
    Chunk *prev;
 
    LOG_FMT(LCMTIND, "%s: line %d, col %d, level %d: ", __func__,
-           pc->orig_line, pc->orig_col, pc->level);
+           pc->GetOrigLine(), pc->GetOrigCol(), pc->GetLevel());
 
    /* force column 1 comment to column 1 if not changing them */
-   if ((pc->orig_col == 1) && !cpd.settings[UO_indent_col1_comment].b)
+   if ((pc->GetOrigCol() == 1) && !cpd.settings[UO_indent_col1_comment].b)
    {
       LOG_FMT(LCMTIND, "rule 1 - keep in col 1\n");
-      pc->column = 1;
+      pc->SetColumn(1);
       return;
    }
 
    nl = pc->GetPrev();
 
    /* outside of any expression or statement? */
-   if (pc->level == 0)
+   if (pc->GetLevel() == 0)
    {
-      if ((nl != NULL) && (nl->nl_count > 1))
+      if ((nl != NULL) && (nl->GetNlCount() > 1))
       {
          LOG_FMT(LCMTIND, "rule 2 - level 0, nl before\n");
-         pc->column = 1;
+         pc->SetColumn(1);
          return;
       }
    }
 
    prev = nl->GetPrev();
-   if (chunk_is_comment(prev) && (nl->nl_count == 1))
+   if (prev->IsComment() && (nl->GetNlCount() == 1))
    {
-      int coldiff = prev->orig_col - pc->orig_col;
+      int coldiff = prev->GetOrigCol() - pc->GetOrigCol();
 
       if ((coldiff <= 3) && (coldiff >= -3))
       {
-         pc->column = prev->column;
+         pc->SetColumn(prev->GetColumn());
          LOG_FMT(LCMTIND, "rule 3 - prev comment, coldiff = %d, now in %d\n",
-                 coldiff, pc->column);
+                 coldiff, pc->GetColumn());
          return;
       }
    }
    /* check if special single line comment rule applies */
    if (cpd.settings[UO_indent_sing_line_comments].n > 0 && single_line_comment_indent_rule_applies(pc))
    {
-      pc->column = col + cpd.settings[UO_indent_sing_line_comments].n;
-      LOG_FMT(LCMTIND, "rule 4 - single line comment indent, now in %d\n", pc->column);
+      pc->SetColumn(col + cpd.settings[UO_indent_sing_line_comments].n);
+      LOG_FMT(LCMTIND, "rule 4 - single line comment indent, now in %d\n", pc->GetColumn());
       return;
    }
    LOG_FMT(LCMTIND, "rule 5 - fall-through, stay in %d\n", col);
 
-   pc->column = col;
+   pc->SetColumn(col);
 }
 
 
 /**
  * Put spaces on either side of the preproc (#) symbol.
- * This is done by pointing pc->str into pp_str and adjusting the
+ * This is done by pointing pc->GetStr() into pp_str and adjusting the
  * length.
  */
 void indent_preproc(void)
@@ -969,7 +969,7 @@ void indent_preproc(void)
 
    for (pc = Chunk::GetHead(); pc != NULL; pc = pc->GetNext())
    {
-      if (chunk_is_comment(pc) || chunk_is_newline(pc))
+      if (pc->IsComment() || pc->IsNewline())
       {
          continue;
       }
@@ -977,12 +977,12 @@ void indent_preproc(void)
       if (stage == 0)
       {
          /* Check the first PP, make sure it is an #if type */
-         if (pc->type != CT_PREPROC)
+         if (pc->GetType() != CT_PREPROC)
          {
             break;
          }
          next = pc->GetNext();
-         if ((next == NULL) || (next->type != CT_PP_IF))
+         if ((next == NULL) || (next->GetType() != CT_PP_IF))
          {
             break;
          }
@@ -991,8 +991,8 @@ void indent_preproc(void)
       else if (stage == 1)
       {
          /* Scan until a PP at level 0 is found - the close to the #if */
-         if ((pc->type == CT_PREPROC) &&
-             (pc->pp_level == 0))
+         if ((pc->GetType() == CT_PREPROC) &&
+             (pc->GetPpLevel() == 0))
          {
             stage = 2;
          }
@@ -1001,8 +1001,8 @@ void indent_preproc(void)
       else if (stage == 2)
       {
          /* We should only see the rest of the preprocessor */
-         if ((pc->type == CT_PREPROC) ||
-             ((pc->flags & PCF_IN_PREPROC) == 0))
+         if ((pc->GetType() == CT_PREPROC) ||
+             ((pc->GetFlags() & PCF_IN_PREPROC) == 0))
          {
             stage = 0;
             break;
@@ -1018,16 +1018,16 @@ void indent_preproc(void)
 
    for (pc = Chunk::GetHead(); pc != NULL; pc = pc->GetNext())
    {
-      if (pc->type != CT_PREPROC)
+      if (pc->GetType() != CT_PREPROC)
       {
          continue;
       }
 
-      if (pc->column != 1)
+      if (pc->GetColumn() != 1)
       {
          /* Don't handle preprocessors that aren't in column 1 */
          LOG_FMT(LINFO, "%s: Line %d doesn't start in column 1 (%d)\n",
-                 __func__, pc->orig_line, pc->column);
+                 __func__, pc->GetOrigLine(), pc->GetColumn());
          continue;
       }
 
@@ -1035,14 +1035,14 @@ void indent_preproc(void)
       if (pc->len == 2)
       {
          /* alternate token crap */
-         pc->str = &alt_str[16];
+         pc->Str() = &alt_str[16];
       }
       else
       {
-         pc->str = &pp_str[16];
+         pc->Str() = &pp_str[16];
       }
 
-      pp_level = pc->pp_level - pp_level_sub;
+      pp_level = pc->GetPpLevel() - pp_level_sub;
       if (pp_level < 0)
       {
          pp_level = 0;
@@ -1056,13 +1056,13 @@ void indent_preproc(void)
       if ((cpd.settings[UO_pp_indent].a & AV_ADD) != 0)
       {
          /* Need to add some spaces */
-         pc->str -= pp_level;
+         pc->Str() -= pp_level;
          pc->len += pp_level;
       }
       else if (cpd.settings[UO_pp_indent].a == AV_IGNORE)
       {
-         tmp      = (pc->orig_col <= 16) ? pc->orig_col - 1 : 16;
-         pc->str -= tmp;
+         tmp      = (pc->GetOrigCol() <= 16) ? pc->GetOrigCol() - 1 : 16;
+         pc->Str() -= tmp;
          pc->len += tmp;
       }
 
@@ -1079,6 +1079,6 @@ void indent_preproc(void)
       }
 
       LOG_FMT(LPPIS, "%s: Indent line %d to %d (len %d, next->col %d)\n",
-              __func__, pc->orig_line, pp_level, pc->len, next->column);
+              __func__, pc->GetOrigLine(), GetPpLevel(), pc->len, next->GetColumn());
    }
 }

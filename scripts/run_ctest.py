@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import argparse
 import math
@@ -27,6 +27,7 @@ def main():
         sys.exit(-1)
 
     cmd = ['ctest', '-j{}'.format(args.parallel)]
+    #cmd = ['ctest', '--verbose', '-j{}'.format(args.parallel)]                    Issue #4066
     if not args.quiet:
         cmd.append('--output-on-failure')
     cmd += args.args

@@ -1,0 +1,20 @@
+/**
+ * @file cs_top_is_question.cpp
+ *
+ * @author  Guy Maurel
+ * @license GPL v2+
+ */
+
+#include "tokenizer/cs_top_is_question.h"
+
+#include "chunk.h"
+#include "ChunkStack.h"
+
+
+bool cs_top_is_question(const ChunkStack &cs, size_t level)
+{
+   Chunk const *pc = cs.Empty() ? Chunk::NullChunkPtr : cs.Top()->m_pc;
+
+   return(  pc->Is(E_Token::CT_QUESTION)
+         && pc->GetLevel() == level);
+}

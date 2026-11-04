@@ -2,11 +2,7 @@
  Uncrustify Release Process
 ============================
 
-.. Update the date in the next line when editing this document!
-
-*This document was last updated on 2021-05-12, for Uncrustify 0.73.0.*
-
-This document uses "0.1.2" throughout as an example version number.
+This document uses "0.x.0" throughout as an example version number.
 Whenever you see this, you should substitute the version number
 of the new release being prepared.
 
@@ -39,33 +35,72 @@ Using packages provided by your OS distribution is *strongly* recommended.
 Examples use ``wget`` to download files via command line,
 but any mechanism of obtaining files over HTTPS may be employed.
 
+Preliminary checks
+==================
+
+Prior to making a release, verify that the repository is in a stable state
+and that all CI (continuous integration) tests have passed.
+This should ensure all tests pass and building is working,
+including cross-compiling for Windows.
+
+Before starting the release process, first check that:
+
+  - your local clone of ``uncrustify/uncrustify`` is up to date
+    (don't use your uncrustify fork clone for preparing a release)
+  - you are on the ``master`` branch
+  - ``CMAKE_BUILD_TYPE`` is set to ``Release`` (or ``RelWithDebInfo``)
+  - you have a valid PAT for your admin account. See below on how
+    to get a new PAT if needed.
+  - ``.git/config`` contains your PAT information. Again see below.
+
+Getting a new GitHub PAT and set up git correctly
+=================================================
+
+Info about PAT can be found here:
+https://github.blog/2020-12-15-token-authentication-requirements-for-git-operations/
+https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
+
+To get a new PAT for your admin account follow these steps:
+  - login with an admin account at https://github.com/uncrustify/uncrustify
+  - on the right, click on the photo
+  - scroll down to "Settings"
+  - on the left, scroll down to "Developer settings", and click
+  - on the left, click on "Personal access tokens"
+  - choose "Tokens (classic), click
+  - if necessary "Delete" expired token(s)
+  - click on "Generate new token"
+  - choose "Generate new token (classic)", click
+  - choose a "what's this token for"
+  - click on "repo"
+  - scroll down to bottom and click on "Generate token"
+  - make sure to copy your personal access token now. You won’t be able to see it again!
+  - copy the token "ghp_******"
+  - update the file ``.git/config`` using the new token
+      [remote "origin"]
+          url = https://<admin account>:<PAT>@github.com/uncrustify/uncrustify.git
+  - check that the PAT is correct with:
+    .. code::
+       $ git config --local --get remote.origin.url
+
+
 Preparing a Candidate
 =====================
 
-The first step, obviously, is deciding to make a release.
-Prior to making a release, verify that the repository is in a stable state
-and that all CI (continuous integration - Travis and AppVeyor) has passed.
-This should ensure all tests pass and building
-(including cross-compiling) for Windows is working.
+First update the list of authors with:
 
-Once the release process is started,
-only pull requests needed to fix critical bugs,
-or related to the release process, should be accepted.
-(This will minimize the need to redo or repeat work
-such as updating the documentation, especially the change log.)
+  .. code::
 
-To start the release process, first check that:
+     $ ./scripts/prepare_list_of_authors.sh
 
-- You are on the ``master`` branch
-- Your local clone is up to date
-- ``CMAKE_BUILD_TYPE`` is set to ``Release`` (or ``RelWithDebInfo``)
-- Your build is up to date
-- check the list of authors with scripts/prepare_list_of_authors.sh
+Build uncrustify (including builds for Windows) and verify that they are successful
+and all tests are passed. See section "Create Binaries" below for the required steps.
 
-Then, run::
+Run the following commands to start the release preparation:
 
-   $ scripts/release_tool.py init
-   $ scripts/release_tool.py update path/to/uncrustify
+  .. code::
+
+     $ ./scripts/release_tool.py init
+     $ ./scripts/release_tool.py update path/to/uncrustify
 
 (Replace ``path/to/uncrustify`` with the path to the Uncrustify executable
 you just built, e.g. ``build/uncrustify``.)
@@ -97,7 +132,7 @@ that can help extract new options since the previous release:
 
 .. code::
 
-   $ scripts/gen_changelog.py uncrustify-0.0.0
+   $ ./scripts/gen_changelog.py uncrustify-0.0.0
 
 Replace ``0.0.0`` with the version of the *previous* release.
 This will generate a bunch of output like::
@@ -109,45 +144,8 @@ This will generate a bunch of output like::
      Added   : new_option_1                         Jan 18 1970
      Added   : new_option_2                         Jan 18 1970
 
-Your goal is to turn the "raw" output into something like this::
-
-   Deprecated options:
-     - poor_name                             Jan 13 1970
-       Renamed to better_name
-
-   New options:
-     - new_option_1                         Jan 18 1970
-     - new_option_1                         Jan 18 1970
-
-To accomplish this, you will need to inspect any removed options,
-possibly consulting the commits in which they were removed,
-to determine the reason for deprecation and what replacement is recommended.
-(Note that it may not be as simple as "use X instead".)
-Also watch for options that were added and subsequently renamed
-since the last release. (This has happened a few times.
-In such cases, the new name should show up as an ordinary "new" option,
-and the old name should be entirely omitted from the change log.)
-
-It helps to copy the output to a scratch file for editing.
-Move deprecated options to the top and add a "Deprecated options:" header,
-then add a "New options:" header in front of what's left,
-and remove the commit SHAs (``sed -r '/^[[:xdigit:]]{40}/d``
-if you don't want to do it by hand).
-Then, check that the options are in order by date;
-date of authorship vs. date of merge may cause discrepancies.
-Finally, replace occurrences of ``\w+ +:`` with ``-``
-(if your editor supports regular expressions;
-otherwise you can individually replace ``Added   :`` and ``Removed :``).
-
-Add a new release header (don't forget to add the date!) to the change log
-and insert the list of option changes as created above.
-Also fill in the list of resolved issues, new keywords (if any),
-as well as any other changes that need to be mentioned.
-
-If any command line arguments have been added or changed,
-including descriptions for the same, check to see if
-``:/man/uncrustify.1.in`` needs to be updated.
-(Hopefully this happened when the source was changed!)
+Copy the output from the script at the top of ``:/ChangeLog``
+and add a new release header (don't forget to add the date!)
 
 Finalize the Code Changes
 =========================
@@ -155,18 +153,14 @@ Finalize the Code Changes
 Inspect your working tree.
 Use ``git add -p`` to stage the changes made to the documentation
 and other artifacts that contain version-dependent information.
-Verify that only desired changes are staged,
-and that your working tree is otherwise clean.
-
-Now is a good time to recheck
-that everything builds, and that all the tests pass.
-This is also a good time to manually test 32- and 64-bit builds.
+Verify that only desired changes are staged and that your working
+tree is otherwise clean.
 
 When you are ready, commit the changes using:
 
 .. code::
 
-   $ scripts/release_tool.py commit
+   $ ./scripts/release_tool.py commit
 
 (If you prefer, you can also commit the changes manually;
 the script just fills in the commit message for you.)
@@ -174,38 +168,79 @@ the script just fills in the commit message for you.)
 Submit and Tag the Release
 ==========================
 
-Push the release candidate branch to GitHub, and create a pull request.
-Once the pull request is merged, tag the release using:
-Make sure, the file .git/config has the right value:
-[remote "origin"]
-        url = https://github.com/uncrustify/uncrustify.git
+Push the release candidate branch to GitHub and create a pull request.
+Make sure to use your NON-admin account for creating the pull request,
+so that later you can use your admin account to approve it.
 
 .. code::
 
-   $ scripts/release_tool.py tag
+   $ git push -u origin HEAD
+
+This will push the branch and commit to the remote upstream and will print
+out a link that you can use to create a pull request in a web browser.
+
+Once the pull request has completed the various CI checks, merge it.
+
+Switch to ``master`` branch and check out the latest commit that includes
+the previously merged pull request and then tag the release using:
+
+.. code::
+
+   $ ./scripts/release_tool.py tag
 
 Note that this will only work if the merge of the release candidate
 is the most recent commit upstream.
 Otherwise, the merge commit must be specified by using the ``-c`` option.
+The command will automatically push the tag upstream as well.
+
+You can check the new tag with the following commands, which will list
+all existing tags locally and remotely, respectively
+
+.. code::
+
+   git tag
+   git ls-remote --tags origin
 
 (Tagging the release does not need to be done on any particular branch.
 The command will not affect or look at your work tree at all.)
 
+Finally, delete the release branch upstream and locally
+
+.. code::
+
+   $ git push -d origin <release branch name>
+   $ git branch -D <release branch name>
+
 Create Binaries
 ===============
 
-Now that the release is published, grab a copy of the sources from GitHub:
+Create a tarball and zip archive of the sources:
 
 .. code::
 
-   $ wget https://github.com/uncrustify/uncrustify/archive/uncrustify-0.1.2.zip
-   $ unzip -e uncrustify-0.1.2.zip
+   $ cd /path/to/uncrustify
+   $ git archive -o ../uncrustify-0.x.0.tar.gz --prefix=uncrustify-uncrustify-0.x.0/ uncrustify-0.x.0
+   $ cd /path/to/uncrustify/..
+   $ tar xzf ./uncrustify-0.x.0.tar.gz
+   $ zip -r uncrustify-0.x.0.zip uncrustify-uncrustify-0.x.0
 
-Next, build the 32- and 64-bit Windows binaries:
+Build the Linux binaries:
 
 .. code::
 
-   $ cd /path/to/uncrustify-uncrustify-0.1.2
+   $ cd /path/to/uncrustify-uncrustify-0.x.0
+   $ mkdir build
+   $ cd build
+   $ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
+   $ ninja
+   $ ctest
+   $ ./uncrustify --version
+
+Next, build the 32 and 64 bit Windows binaries:
+
+.. code::
+
+   $ cd /path/to/uncrustify-uncrustify-0.x.0
    $ mkdir buildwin-32
    $ cd buildwin-32
    $ cmake -G Ninja \
@@ -218,7 +253,7 @@ Next, build the 32- and 64-bit Windows binaries:
 
 .. code::
 
-   $ cd /path/to/uncrustify-uncrustify-0.1.2
+   $ cd /path/to/uncrustify-uncrustify-0.x.0
    $ mkdir buildwin-64
    $ cd buildwin-64
    $ cmake -G Ninja \
@@ -229,57 +264,53 @@ Next, build the 32- and 64-bit Windows binaries:
    $ ninja
    $ cpack
 
-Create a tarball:
+Create a release on github
+==========================
 
-.. code::
-
-   $ cd /path/to/uncrustify
-   $ git archive -o uncrustify-0.1.2.tar.gz --prefix=uncrustify-0.1.2/ uncrustify-0.1.2
-TODO: find the best strategie...
-
-(If you don't have Ninja_, or just don't want to use it for whatever reason,
-omit ``-G Ninja`` and run ``make`` instead of ``ninja``.)
-
-This is also a good time to test the tagged build on Linux:
-
-.. code::
-
-   $ wget https://github.com/uncrustify/uncrustify/archive/uncrustify-0.1.2.tar.gz
-   $ tar xzf uncrustify-0.1.2.tar.gz
-   $ cd uncrustify-uncrustify-0.1.2
-   $ mkdir build
-   $ cd build
-   $ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
-   $ ninja
-   $ ctest
-   $ ./uncrustify --version
+- Login with an admin account at https://github.com/uncrustify/uncrustify
+- Navigate to https://github.com/uncrustify/uncrustify/releases and click on
+  the "Draft a new release" button at the top of the page
+- Select the corresponding release tag under the "Choose a tag" combobox
+- Add the release version under "Release title" as "Uncrustify 0.xx.y"
+- Upload the Windows binaries and the source code zip/tarball files in the section
+  "Attach binaries by dropping them here or selecting them": these will show up as
+  "Assets" under the release text. The following files need to be added:
+   - buildwin-32/uncrustify-0.x.0_f-win32.zip
+   - buildwin-64/uncrustify-0.x.0_f-win64.zip
+   - uncrustify-0.x.0.tar.gz
+   - uncrustify-0.x.0.zip
+- Add release text in describing section. It is recommended to copy the text
+  from previous releases and update the related files. Make sure to use bold text
+  to highlight the various sections (use '### ' at the beginning of the line).
+  You need to drag the files into the text section to get a link to the actual
+  files there. The same files mentioned above need to be added.
+- Publish the release by clicking on the "Publish release" button.
 
 Upload to SourceForge
 =====================
 
 - Login as admin under https://sourceforge.net/projects/uncrustify/
 - Change to https://sourceforge.net/projects/uncrustify/files/
-- "Add Folder"; the name should be e.g. "uncrustify-0.1.2"
+- "Add Folder"; the name should be e.g. "uncrustify-0.x.0"
 - Navigate to the new folder
-  (e.g. https://sourceforge.net/projects/uncrustify/files/uncrustify-0.1.2/)
-- "Add File"; upload the following files
+  (e.g. https://sourceforge.net/projects/uncrustify/files/uncrustify-0.x.0/)
+- Click "Add File" and upload the following files
   (adjusting for the actual version number):
+  Click "Done" when all files have been uploaded.
 
-  - README.md
-  - uncrustify-0.1.2.tar.gz
-  - buildwin-32/uncrustify-0.1.2_f-win32.zip
-  - buildwin-64/uncrustify-0.1.2_f-win64.zip
+  * README.md
+  * uncrustify-0.x.0.tar.gz
+  * uncrustify-0.x.0.zip
+  * buildwin-32/uncrustify-0.x.0_f-win32.zip
+  * buildwin-64/uncrustify-0.x.0_f-win64.zip
 
-- "Done"
-- Upload the documentation:
+- Upload the documentation using the following commands:
 
   .. code::
 
+     $ cd /path/to/uncrustify
      $ scp -r documentation/htdocs/* ChangeLog \
-       USER,uncrustify@web.sourceforge.net:htdocs/
-
-- Use the web interface (file manager) to create the release folder
-  and upload the files to SourceForge.
+       USERNAME,uncrustify@web.sourceforge.net:htdocs/
 
 Announce the Release (Optional)
 ===============================
@@ -317,6 +348,7 @@ These items are explained in greater detail above.
 #. Tag the merged release branch.
 #. Create Windows (32- and 64-bit) binaries.
 #. Run a test build on Linux.
+#. Create release on Github.
 #. Upload the release and documentation to SourceForge.
 #. Announce the release!
 

@@ -26,6 +26,7 @@
 #include <vector>
 
 #include <cassert>
+#include <cstdio>
 
 #ifdef IGNORE // WinBase.h
 #undef IGNORE
@@ -62,11 +63,10 @@ enum class bool
 /// I/A/R/F values - these are bit fields
 enum class iarf_e // <IARF>
 {
-   IGNORE      = 0,              //! option ignores a given feature
-   ADD         = (1u << 0),      //! option adds a given feature
-   REMOVE      = (1u << 1),      //! option removes a given feature
-   FORCE       = (ADD | REMOVE), //! option forces the usage of a given feature
-   NOT_DEFINED = (1u << 2)       //! for debugging
+   IGNORE = 0,                   //! option ignores a given feature
+   ADD    = (1u << 0),           //! option adds a given feature
+   REMOVE = (1u << 1),           //! option removes a given feature
+   FORCE  = (ADD | REMOVE),      //! option forces the usage of a given feature
 };
 
 UNC_DECLARE_FLAGS(iarf_flags_t, iarf_e);
@@ -186,13 +186,13 @@ public:
 
    //! resets option to its default value
    //- currently only used by the emscripten interface
-   virtual void reset() override;
+   void reset() override;
 
    bool read(const char *s) override;
    std::string str() const override;
 
    T operator()() const { return(m_val); }
-   Option &operator=(T val) { m_val = val; return(*this); }
+   Option &operator=(const T &val) { m_val = val; return(*this); }
 
 protected:
    template<typename V> friend bool read_enum(const char *s, Option<V> &o);
@@ -316,7 +316,7 @@ GenericOption *find_option(const char *name);
 
 
 //! Add all uncrustify options to the global option registry
-void register_options(void);
+void register_options();
 
 
 OptionGroup *get_option_group(size_t);

@@ -13,9 +13,12 @@
 
 #include "log_rules.h"
 
+
 constexpr static auto LCURRENT = LQT;
 
+
 using namespace uncrustify;
+
 
 // for the modification of options within the SIGNAL/SLOT call.
 bool   QT_SIGNAL_SLOT_found = false;
@@ -42,7 +45,7 @@ private:
    Option<iarf_e> *m_option;
    const iarf_e   m_override_value;
 
-   iarf_e         m_saved_value = IARF_NOT_DEFINED;
+   iarf_e         m_saved_value = IARF_IGNORE;
 };
 
 
@@ -58,7 +61,7 @@ void temporary_iarf_option::save_and_override()
 void temporary_iarf_option::restore()
 {
    (*m_option)   = m_saved_value;
-   m_saved_value = IARF_NOT_DEFINED;
+   m_saved_value = IARF_IGNORE;
 }
 
 //-----------------------------------------------------------------------------
@@ -107,7 +110,7 @@ void save_set_options_for_QT(size_t level)
 
 
 //-----------------------------------------------------------------------------
-void restore_options_for_QT(void)
+void restore_options_for_QT()
 {
    log_rule_B("use_options_overriding_for_qt_macros");
    assert(options::use_options_overriding_for_qt_macros());

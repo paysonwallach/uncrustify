@@ -6,39 +6,86 @@
  * @author  Guy Maurel October 2015, 2021
  * @license GPL v2+
  */
-
 #include "output.h"
 
-#include "align_tab_column.h"
+#include "align/tab_column.h"
 #include "braces.h"
 #include "indent.h"
 #include "prototypes.h"
-#include "tokenize.h"
+#include "reindent_line.h"
+#include "tokenizer/tokenize.h"
 #include "unc_ctype.h"
+#include "uncrustify_version.h"  // cppcheck-suppress missingInclude
 #include "unicode.h"
 
+#include <algorithm>
+#include <cstdio>
 #include <ctime>
 #include <map>
 #include <regex>
 #include <set>
+#include <string>
+#include <utility>
+
+// if you need more logs, commented out the next define line
+#define EXTRA_LOG
 
 
 constexpr static auto LCURRENT = LOUTPUT;
+
 
 using namespace uncrustify;
 
 
 struct cmt_reflow
 {
-   Chunk    *pc         = nullptr;
-   size_t   column      = 0;   //! Column of the comment start
-   size_t   brace_col   = 0;   //! Brace column (for indenting with tabs)
-   size_t   base_col    = 0;   //! Base column (for indenting with tabs)
-   size_t   word_count  = 0;   //! number of words on this line
-   size_t   xtra_indent = 0;   //! extra indent of non-first lines (0 or 1)
-   unc_text cont_text;         //! fixed text to output at the start of a line (0 to 3 chars)
-   bool     reflow = false;    //! reflow the current line
+   Chunk   *pc         = Chunk::NullChunkPtr;
+   size_t  column      = 0;   //! Column of the comment start
+   size_t  brace_col   = 0;   //! Brace column (for indenting with tabs)
+   size_t  base_col    = 0;   //! Base column (for indenting with tabs)
+   size_t  word_count  = 0;   //! number of words on this line
+   size_t  xtra_indent = 0;   //! extra indent of non-first lines (0 or 1)
+   UncText cont_text;         //! fixed text to output at the start of a line (0 to 3 chars)
+   bool    reflow = false;    //! reflow the current line
 };
+
+
+// for tracking line numbering
+bool numbering_status = false;
+char char_number[16]  = { 0 };
+int  line_number;
+
+
+void set_numbering(bool status)
+{
+   if (options::set_numbering_for_html_output())
+   {
+      numbering_status = status;
+   }
+}
+
+
+bool get_numbering()
+{
+   return(numbering_status);
+}
+
+
+void set_line_number()
+{
+   line_number = 0;
+}
+
+
+void print_numbering()
+{
+   if (get_numbering())
+   {
+      line_number++;
+      snprintf(char_number, sizeof(char_number), "%d ", line_number);
+      write_string(char_number);
+   }
+}
 
 
 /**
@@ -49,22 +96,22 @@ struct cmt_reflow
 static void output_comment_multi(Chunk *pc);
 
 
-static bool kw_fcn_filename(Chunk *cmt, unc_text &out_txt);
+static bool kw_fcn_filename(Chunk const *cmt, UncText &out_txt);
 
 
-static bool kw_fcn_class(Chunk *cmt, unc_text &out_txt);
+static bool kw_fcn_class(Chunk const *cmt, UncText &out_txt);
 
 
-static bool kw_fcn_message(Chunk *cmt, unc_text &out_txt);
+static bool kw_fcn_message(Chunk const *cmt, UncText &out_txt);
 
 
-static bool kw_fcn_category(Chunk *cmt, unc_text &out_txt);
+static bool kw_fcn_category(Chunk const *cmt, UncText &out_txt);
 
 
-static bool kw_fcn_scope(Chunk *cmt, unc_text &out_txt);
+static bool kw_fcn_scope(Chunk const *cmt, UncText &out_txt);
 
 
-static bool kw_fcn_function(Chunk *cmt, unc_text &out_txt);
+static bool kw_fcn_function(Chunk const *cmt, UncText &out_txt);
 
 
 /**
@@ -73,13 +120,13 @@ static bool kw_fcn_function(Chunk *cmt, unc_text &out_txt);
  * If the arg list is '()' or '(void)', then no @params are added.
  * Likewise, if the return value is 'void', then no @return is added.
  */
-static bool kw_fcn_javaparam(Chunk *cmt, unc_text &out_txt);
+static bool kw_fcn_javaparam(Chunk const *cmt, UncText &out_txt);
 
 
-static bool kw_fcn_fclass(Chunk *cmt, unc_text &out_txt);
+static bool kw_fcn_fclass(Chunk const *cmt, UncText &out_txt);
 
 
-static bool kw_fcn_year(Chunk *cmt, unc_text &out_txt);
+static bool kw_fcn_year(Chunk const *cmt, UncText &out_txt);
 
 
 /**
@@ -94,10 +141,10 @@ static void output_comment_multi_simple(Chunk *pc);
 /**
  * This renders the #if condition to a string buffer.
  *
- * @param[out] dst    unc_text buffer to be filled
+ * @param[out] dst    UncText buffer to be filled
  * @param[in]  ifdef  if conditional as chunk list
  */
-static void generate_if_conditional_as_text(unc_text &dst, Chunk *ifdef);
+static void generate_if_conditional_as_text(UncText &dst, Chunk *ifdef);
 
 
 /**
@@ -109,20 +156,20 @@ static void do_kw_subst(Chunk *pc);
 
 
 //! All output text is sent here, one char at a time.
-static void add_char(UINT32 ch, bool is_literal = false);
+static void add_char(uint32_t ch, bool is_literal = false);
 
 
 static void add_text(const char *ascii_text);
 
 
-static void add_text(const unc_text &text, bool is_ignored, bool is_literal);
+static void add_text(const UncText &text, bool is_ignored, bool is_literal);
 
 
 /**
  * Count the number of characters to the end of the next chunk of text.
  * If it exceeds the limit, return true.
  */
-static bool next_word_exceeds_limit(const unc_text &text, size_t idx);
+static bool next_word_exceeds_limit(const UncText &text, size_t idx);
 
 
 /**
@@ -146,7 +193,7 @@ static void cmt_output_indent(size_t brace_col, size_t base_col, size_t column);
  *
  * @return 0: not present, >0: number of chars that are part of the lead
  */
-static size_t cmt_parse_lead(const unc_text &line, bool is_last);
+static size_t cmt_parse_lead(const UncText &line, bool is_last);
 
 
 /**
@@ -176,10 +223,10 @@ static size_t cmt_parse_lead(const unc_text &line, bool is_last);
  *
  * @return cmt.xtra_indent is set to 0 or 1
  */
-static void calculate_comment_body_indent(cmt_reflow &cmt, const unc_text &str);
+static void calculate_comment_body_indent(cmt_reflow &cmt, const UncText &str);
 
 
-static int next_up(const unc_text &text, size_t idx, const unc_text &tag);
+static int next_up(const UncText &text, size_t idx, const UncText &tag);
 
 
 /**
@@ -200,7 +247,7 @@ static Chunk *output_comment_c(Chunk *pc);
 static Chunk *output_comment_cpp(Chunk *pc);
 
 
-static void cmt_trim_whitespace(unc_text &line, bool in_preproc);
+static void cmt_trim_whitespace(UncText &line, bool in_preproc);
 
 
 /**
@@ -215,7 +262,7 @@ static void cmt_trim_whitespace(unc_text &line, bool in_preproc);
  * If the last char on a line is a ':' or '.', then the next line won't be
  * combined.
  */
-static void add_comment_text(const unc_text &text, cmt_reflow &cmt, bool esc_close, size_t continuation_indent = 0);
+static void add_comment_text(const UncText &text, cmt_reflow &cmt, bool esc_close, size_t continuation_indent = 0);
 
 
 static void output_cmt_start(cmt_reflow &cmt, Chunk *pc);
@@ -228,11 +275,11 @@ static void output_cmt_start(cmt_reflow &cmt, Chunk *pc);
  *  2. There is exactly one newline between then
  *  3. They are indented to the same level
  */
-static bool can_combine_comment(Chunk *pc, cmt_reflow &cmt);
+static bool can_combine_comment(Chunk const *pc, const cmt_reflow &cmt);
 
 
 #define LOG_CONTTEXT() \
-   LOG_FMT(LCONTTEXT, "%s(%d): set cont_text to '%s'\n", __func__, __LINE__, cmt.cont_text.c_str())
+   LOG_FMT(LCONTTEXT, "%s(%d): set cont_text to '%s'\n", __func__, __LINE__, cmt.cont_text.GetLogText())
 
 
 static void add_spaces()
@@ -245,7 +292,7 @@ static void add_spaces()
 }
 
 
-static void add_char(UINT32 ch, bool is_literal)
+static void add_char(uint32_t ch, bool is_literal)
 {
    // If we did a '\r' and it isn't followed by a '\n', then output a newline
    if (  (cpd.last_char == '\r')
@@ -253,7 +300,7 @@ static void add_char(UINT32 ch, bool is_literal)
    {
       write_string(cpd.newline);
       cpd.column      = 1;
-      cpd.did_newline = 1;
+      cpd.did_newline = true;
       cpd.spaces      = 0;
    }
 
@@ -263,14 +310,15 @@ static void add_char(UINT32 ch, bool is_literal)
       add_spaces();
       write_string(cpd.newline);
       cpd.column      = 1;
-      cpd.did_newline = 1;
+      cpd.did_newline = true;
       cpd.spaces      = 0;
+      print_numbering();
    }
    else if (ch == '\r') // do not output the CARRIAGERETURN
    {
       // do not output '\r'
       cpd.column      = 1;
-      cpd.did_newline = 1;
+      cpd.did_newline = true;
       cpd.spaces      = 0;
    }
    else if (  (ch == '\t')
@@ -293,7 +341,14 @@ static void add_char(UINT32 ch, bool is_literal)
       {
          log_rule_B("indent_with_tabs");
 
-         if (options::indent_with_tabs() == 0)
+         int indent_with_tabs = options::pp_indent_with_tabs();
+
+         if (indent_with_tabs == -1)
+         {
+            indent_with_tabs = options::indent_with_tabs();
+         }
+
+         if (indent_with_tabs == 0)
          {
             size_t endcol = next_tab_column(cpd.column);
 
@@ -342,7 +397,7 @@ static void add_text(const char *ascii_text)
 }
 
 
-static void add_text(const unc_text &text, bool is_ignored = false, bool is_literal = false)
+static void add_text(const UncText &text, bool is_ignored = false, bool is_literal = false)
 {
    for (size_t idx = 0; idx < text.size(); idx++)
    {
@@ -360,10 +415,8 @@ static void add_text(const unc_text &text, bool is_ignored = false, bool is_lite
 }
 
 
-static bool next_word_exceeds_limit(const unc_text &text, size_t idx)
+static bool next_word_exceeds_limit(const UncText &text, size_t idx)
 {
-   LOG_FMT(LCONTTEXT, "%s(%d): idx is %zu\n",
-           __func__, __LINE__, idx);
    size_t length = 0;
 
    // Count any whitespace
@@ -381,7 +434,10 @@ static bool next_word_exceeds_limit(const unc_text &text, size_t idx)
       idx++;
       length++;
    }
-   return((cpd.column + length - 1) > options::cmt_width());
+   bool exceed_limit = (cpd.column + length - 1) > options::cmt_width();
+   LOG_FMT(LCONTTEXT, "%s(%d): idx is %zu%s\n",
+           __func__, __LINE__, idx, (exceed_limit ? " exceeds limit" : ""));
+   return(exceed_limit);
 }
 
 
@@ -393,7 +449,7 @@ static bool next_word_exceeds_limit(const unc_text &text, size_t idx)
  */
 static void output_to_column(size_t column, bool allow_tabs)
 {
-   cpd.did_newline = 0;
+   cpd.did_newline = false;
 
    if (allow_tabs)
    {
@@ -418,7 +474,6 @@ static void output_to_column(size_t column, bool allow_tabs)
 static void cmt_output_indent(size_t brace_col, size_t base_col, size_t column)
 {
    log_rule_B("indent_cmt_with_tabs");
-   log_rule_B("indent_with_tabs");
    size_t iwt = options::indent_cmt_with_tabs() ? 2 :
                 (options::indent_with_tabs() ? 1 : 0);
 
@@ -427,7 +482,7 @@ static void cmt_output_indent(size_t brace_col, size_t base_col, size_t column)
    // LOG_FMT(LSYS, "%s(brace=%zd base=%zd col=%zd iwt=%zd) tab=%zd cur=%zd\n",
    //        __func__, brace_col, base_col, column, iwt, tab_col, cpd.column);
 
-   cpd.did_newline = 0;
+   cpd.did_newline = false;
 
    if (  iwt == 2
       || (  cpd.column == 1
@@ -466,49 +521,47 @@ void output_parsed(FILE *pfile, bool withOptions)
    // and              430: ... fprintf(pfile, "%s# %3zu>%19.19s[%19.19s] ...
    // here                                                xx xx   xx xx
 #ifdef WIN32
-   fprintf(pfile, "# Line                Tag         Parent_type  Type of the parent         Columns Br/Lvl/pp     Nl  Text");
+   fprintf(pfile, "# Line                Tag         Parent_type  Type of the parent         Columns Len Br/Lvl/pp     Nl  Text");
 #else // not WIN32
-   fprintf(pfile, "# Line                Tag         Parent_type  Type of the parent         Columns Br/Lvl/pp         Flag   Nl  Text");
+   fprintf(pfile, "# Line                Tag         Parent_type  Type of the parent         Columns Len Br/Lvl/pp             Flags   Nl  Text");
 #endif // ifdef WIN32
 
-   for (Chunk *pc = Chunk::GetHead(); pc->IsNotNullChunk(); pc = pc->GetNext())
+   for (Chunk const *pc = Chunk::GetHead(); pc->IsNotNullChunk(); pc = pc->GetNext())
    {
 #ifdef WIN32
-      fprintf(pfile, "%s# %3d>%19.19s|%19.19s|%19.19s[%3d/%3d/%3d/%3d][%d/%d/%d][%d-%d]",
-              eol_marker, (int)pc->orig_line, get_token_name(pc->type),
-              get_token_name(get_chunk_parent_type(pc)), get_token_name(get_type_of_the_parent(pc)),
-              (int)pc->column, (int)pc->orig_col, (int)pc->orig_col_end, (int)pc->orig_prev_sp,
-              (int)pc->brace_level, (int)pc->level, (int)pc->pp_level, (int)pc->nl_count, pc->after_tab);
+      fprintf(pfile, "%s# %3d>%19.19s|%19.19s|%19.19s[%3d/%3d/%3d/%3d][%2d][%d/%d/%d][%d-%d]",
+              eol_marker, static_cast<int>(pc->GetOrigLine()), get_token_name(pc->GetType()),
+              get_token_name(pc->GetParentType()), get_token_name(pc->GetTypeOfParent()), static_cast<int>(pc->GetColumn()),
+              static_cast<int>(pc->GetOrigCol()), static_cast<int>(pc->GetOrigColEnd()), static_cast<int>(pc->GetOrigPrevSp()),
+              static_cast<int>(pc->Len()), static_cast<int>(pc->GetBraceLevel()), static_cast<int>(pc->GetLevel()),
+              static_cast<int>(pc->GetPpLevel()), static_cast<int>(pc->GetNlCount()), pc->GetAfterTab());
 #else // not WIN32
-      fprintf(pfile, "%s# %3zu>%19.19s|%19.19s|%19.19s[%3zu/%3zu/%3zu/%3d][%zu/%zu/%zu]",
-              eol_marker, pc->orig_line, get_token_name(pc->type),
-              get_token_name(get_chunk_parent_type(pc)), get_token_name(get_type_of_the_parent(pc)),
-              pc->column, pc->orig_col, pc->orig_col_end, pc->orig_prev_sp,
-              pc->brace_level, pc->level, pc->pp_level);
+      fprintf(pfile, "%s# %3zu>%19.19s|%19.19s|%19.19s[%3zu/%3zu/%3zu/%3zu][%2zu][%zu/%zu/%zu]",
+              eol_marker, pc->GetOrigLine(), get_token_name(pc->GetType()),
+              get_token_name(pc->GetParentType()), get_token_name(pc->GetTypeOfParent()),
+              pc->GetColumn(), pc->GetOrigCol(), pc->GetOrigColEnd(), pc->GetOrigPrevSp(),
+              pc->Len(), pc->GetBraceLevel(), pc->GetLevel(), pc->GetPpLevel());
       // Print pc flags in groups of 4 hex characters
-      char flag_string[20];
-      sprintf(flag_string, "%12llx", static_cast<pcf_flags_t::int_t>(pc->flags));
-      fprintf(pfile, "[%.4s %.4s %.4s]", flag_string, flag_string + 4, flag_string + 8);
+      char flag_string[24];
+      snprintf(flag_string, sizeof(flag_string), "%16llx", static_cast<PcfFlags::int_t>(pc->GetFlags()));
+      fprintf(pfile, "[%.4s %.4s %.4s %.4s]", flag_string, flag_string + 4, flag_string + 8, flag_string + 12);
       fprintf(pfile, "[%zu-%d]",
-              pc->nl_count, pc->after_tab);
+              pc->GetNlCount(), pc->GetAfterTab());
 #endif // ifdef WIN32
 
-      if (  pc->type != CT_NEWLINE
-         && (pc->Len() != 0))
+      for (size_t cnt = 0; cnt < pc->GetColumn(); cnt++)
       {
-         for (size_t cnt = 0; cnt < pc->column; cnt++)
-         {
-            fprintf(pfile, " ");
-         }
+         fprintf(pfile, " ");
+      }
 
-         if (pc->type != CT_NL_CONT)
-         {
-            fprintf(pfile, "%s", pc->Text());
-         }
-         else
-         {
-            fprintf(pfile, "\\");
-         }
+      fprintf(pfile, "%s", pc->GetLogText());
+
+      if (options::debug_decode_the_flags())
+      {
+         // such as:
+         // The flags are: [0xc0400:IN_CLASS,STMT_START,EXPR_START]
+         fprintf(pfile, "%s         The flags are: ", eol_marker);
+         fprintf(pfile, "%s", pcf_flags_str(pc->GetFlags()).c_str());
       }
    }
 
@@ -526,15 +579,15 @@ void output_parsed_csv(FILE *pfile)
    fprintf(pfile, "Line,Tag,Parent_type,Type of the parent,Column,Orig Col Strt,"
            "Orig Col End,Orig Sp Before,Br,Lvl,pp,Flags,Nl Before,Nl After,Text,");
 
-   for (Chunk *pc = Chunk::GetHead(); pc->IsNotNullChunk(); pc = pc->GetNext())
+   for (Chunk const *pc = Chunk::GetHead(); pc->IsNotNullChunk(); pc = pc->GetNext())
    {
-      fprintf(pfile, "%s%zu,%s,%s,%s,%zu,%zu,%zu,%d,%zu,%zu,%zu,",
-              eol_marker, pc->orig_line, get_token_name(pc->type),
-              get_token_name(get_chunk_parent_type(pc)), get_token_name(get_type_of_the_parent(pc)),
-              pc->column, pc->orig_col, pc->orig_col_end, pc->orig_prev_sp,
-              pc->brace_level, pc->level, pc->pp_level);
+      fprintf(pfile, "%s%zu,%s,%s,%s,%zu,%zu,%zu,%zu,%zu,%zu,%zu,",
+              eol_marker, pc->GetOrigLine(), get_token_name(pc->GetType()),
+              get_token_name(pc->GetParentType()), get_token_name(pc->GetTypeOfParent()),
+              pc->GetColumn(), pc->GetOrigCol(), pc->GetOrigColEnd(), pc->GetOrigPrevSp(),
+              pc->GetBraceLevel(), pc->GetLevel(), pc->GetPpLevel());
 
-      auto pcf_flag_str = pcf_flags_str(pcf_flag_e(pc->flags));
+      auto pcf_flag_str = pcf_flags_str(E_PcfFlag(pc->GetFlags()));
 #ifdef WIN32
       auto pcf_flag_str_start = pcf_flag_str.find("[") + 1;
 #else // not WIN32
@@ -545,21 +598,21 @@ void output_parsed_csv(FILE *pfile)
                                                   pcf_flag_str_end - pcf_flag_str_start);
       fprintf(pfile, "\"%s\",", pcf_names.c_str());
       fprintf(pfile, "%zu,%d,",
-              pc->nl_count, pc->after_tab);
+              pc->GetNlCount(), pc->GetAfterTab());
 
-      if (  pc->type != CT_NEWLINE
+      if (  pc->IsNot(E_Token::CT_NEWLINE)
          && (pc->Len() != 0))
       {
          fprintf(pfile, "\"");
 
-         for (size_t cnt = 0; cnt < pc->column; cnt++)
+         for (size_t cnt = 0; cnt < pc->GetColumn(); cnt++)
          {
             fprintf(pfile, " ");
          }
 
-         if (pc->type != CT_NL_CONT)
+         if (pc->IsNot(E_Token::CT_NL_CONT))
          {
-            for (auto *ch = pc->Text(); *ch != '\0'; ++ch)
+            for (auto *ch = pc->GetLogText(); *ch != '\0'; ++ch)
             {
                fprintf(pfile, "%c", *ch);
 
@@ -582,15 +635,118 @@ void output_parsed_csv(FILE *pfile)
 } // output_parsed_csv
 
 
+// Compares two tracks according to second in descending order.
+// for the sp_ options
+bool compareTrack_SP(TrackNumber_SP t1, TrackNumber_SP t2)
+{
+   char const *t1s          = t1.second;
+   char const *t2s          = t2.second;
+   int        vergleich     = strcmp(t2s, t1s);
+   bool       int_vergleich = vergleich > 0;
+
+   return(int_vergleich);
+} // bool compareTrack_SP
+
+
+void DecodeTrackingData_SP(Chunk *pc)
+{
+   if (pc->GetTrackingData_SP() == nullptr)
+   {
+      return;
+   }
+   // insert <here> the HTML code for the tracking
+   LOG_FMT(LGUY, "%s(%d): Text is %s, orig_line is %zu, column is %zu\n",
+           __func__, __LINE__, pc->GetLogText(), pc->GetOrigLine(), pc->GetColumn());
+   LOG_FMT(LGUY, " Tracking info are: \n");
+   LOG_FMT(LGUY, "  number of track(s) %zu\n", pc->GetTrackingData_SP()->size());
+   // is sorting necessary?
+   size_t many = pc->GetTrackingData_SP()->size();
+
+   if (many > 1)                                  // there is only one track
+   {
+#ifdef EXTRA_LOG
+      LOG_FMT(LGUY, "  tracking before\n");
+
+      // protocol before sort
+      protocol_track_SP(pc);
+#endif
+
+      if (options::debug_sort_the_tracks())
+      {
+         TrackList_SP *A1 = pc->TrackingData_SP();
+         sort(A1->begin(), A1->end(), compareTrack_SP);
+      }
+   }
+   else
+   {
+      // sorting is not necessary
+   }
+#ifdef EXTRA_LOG
+   LOG_FMT(LGUY, "  tracking after\n");
+
+   // protocol ( after sort )
+   protocol_track_SP(pc);
+#endif
+   char const *old_one   = nullptr;
+   bool       first_text = true;
+   char       tempText[80];
+
+   add_text("<a title=\"");
+
+   for (size_t track = 0; track < pc->GetTrackingData_SP()->size(); track++)
+   {
+      const TrackList_SP   *A       = pc->GetTrackingData_SP();
+      const TrackNumber_SP B        = A->at(track);
+      size_t               Bfirst   = B.first;
+      char                 *Bsecond = B.second;
+
+      if (  old_one == nullptr
+         || strcmp(old_one, Bsecond) != 0)
+      {
+         // first time this option
+         if (old_one != nullptr)
+         {
+            // newline
+            add_text("&#010;");
+            add_text(Bsecond);
+            add_text(": ");
+         }
+         old_one = Bsecond;
+
+         if (first_text)
+         {
+            snprintf(tempText, sizeof(tempText), "%s", Bsecond);
+            add_text(tempText);
+            add_text(": ");
+            first_text = false;
+         }
+      }
+      else
+      {
+         add_text(", ");
+      }
+      snprintf(tempText, sizeof(tempText), "%zu", Bfirst);
+      add_text(tempText);
+   }     // for (size_t track = 0; track < pc->GetTrackingData()->size(); track++)
+
+   add_text("\"><font color=\"red\">M</font></a>");
+} // DecodeTrackingData
+
+
 void output_text(FILE *pfile)
 {
-   bool tracking = cpd.html_file != nullptr;                 // special for debugging
+   // tracking_is_on is "false" if we have the standard output
+   // tracking_is_on is "true"  if we use the tracking with the command option:
+   //    uncrustify ... --tracking space:FILE
+   //    uncrustify ... --tracking nl:FILE
+   // such character "<", ">" needs to be changed to their equivalent &lt; or &gt;
+   bool tracking_is_on = cpd.html_type != tracking_type_e::TT_NONE;                 // special for debugging
 
    cpd.fout        = pfile;
-   cpd.did_newline = 1;
+   cpd.did_newline = true;
    cpd.column      = 1;
 
-   if (cpd.bom)
+   if (cpd.hasBom)
    {
       write_bom();
    }
@@ -603,58 +759,118 @@ void output_text(FILE *pfile)
       // loop over the whole chunk list
       for (pc = Chunk::GetHead(); pc->IsNotNullChunk(); pc = pc->GetNext())
       {
-         pc->column        += indent;
-         pc->column_indent += indent;
+         pc->SetColumn(pc->GetColumn() + indent);
+         pc->SetColumnIndent(pc->GetColumnIndent() + indent);
       }
 
       cpd.frag_cols = 0;
    }
 
-   if (tracking)
+   if (tracking_is_on)
    {
+      set_numbering(false);
       add_text("<html>\n");
       add_text("<head>\n");
       add_text("   <meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\"/>\n");
-      add_text("   <title>Uncrustify: where do the Spaces options work</title>\n");
+
+      if (cpd.html_type == tracking_type_e::TT_SPACE)
+      {
+         add_text("   <title>Uncrustify: where do the Spaces options work</title>\n");
+      }
+      else if (cpd.html_type == tracking_type_e::TT_NEWLINE)
+      {
+         add_text("   <title>Uncrustify: where do the Newlines options work</title>\n");
+      }
       add_text("</head>\n");
       add_text("<body lang=\"en-US\">\n");
       add_text("<p>\n");
       add_text("</p>\n");
       add_text("<pre>\n");
+      set_numbering(true);
+      set_line_number();
+      print_numbering();
    }
-   bool write_in_tracking = false;
+   int pp_indent_with_tabs = options::pp_indent_with_tabs();
+
+   if (pp_indent_with_tabs == -1)
+   {
+      pp_indent_with_tabs = options::indent_with_tabs();
+   }
+
+   if (options::debug_print_version())
+   {
+      add_text("// Version: ");
+      add_text(UNCRUSTIFY_VERSION);
+      add_char('\n');
+   }
 
    // loop over the whole chunk list
    for (pc = Chunk::GetHead(); pc->IsNotNullChunk(); pc = pc->GetNext())
    {
       char copy[1000];
-      LOG_FMT(LCONTTEXT, "%s(%d): Text() is '%s', type is %s, orig_line is %zu, column is %zu, nl is %zu\n",
-              __func__, __LINE__, pc->ElidedText(copy), get_token_name(pc->type), pc->orig_line, pc->column, pc->nl_count);
-      log_rule_B("cmt_convert_tab_to_spaces");
-      cpd.output_tab_as_space = (  options::cmt_convert_tab_to_spaces()
-                                && pc->IsComment());
+      LOG_FMT(LCONTTEXT, "%s(%d): text is '%s', type is %s, orig line is %zu, column is %zu, nl is %zu\n",
+              __func__, __LINE__, pc->ElidedText(copy), get_token_name(pc->GetType()), pc->GetOrigLine(),
+              pc->GetColumn(), pc->GetNlCount());
+      cpd.output_tab_as_space = false;
 
-      if (chunk_is_token(pc, CT_NEWLINE))
+      if (  pc->Is(E_Token::CT_STRING)
+         && tracking_is_on)
       {
-         for (size_t cnt = 0; cnt < pc->nl_count; cnt++)
+         // prepare the string for the HTML-output
+         LOG_FMT(LCONTTEXT, "%s(%d): STRING\n",
+                 __func__, __LINE__);
+         size_t  len = pc->Len();
+         UncText u   = pc->Text();
+
+         for (size_t idx = 0; idx < len; idx++)
+         {
+            int c = u[idx];
+
+            if (c == '<')
+            {
+               add_text("&lt;");       // 60
+            }
+            else if (c == '>')
+            {
+               add_text("&gt;");        // 62
+            }
+            else
+            {
+               add_char(c);
+            }
+         }
+      }
+
+      if (pc->Is(E_Token::CT_NEWLINE))
+      {
+         DecodeTrackingData_SP(pc);
+
+         for (size_t cnt = 0; cnt < pc->GetNlCount(); cnt++)
          {
             if (  cnt > 0
-               && pc->nl_column > 1)
+               && pc->GetNlColumn() > 1)
             {
-               log_rule_B("indent_with_tabs");
-               output_to_column(pc->nl_column, (options::indent_with_tabs() == 2));
+               log_rule_B("indent_with_tabs - newline");
+
+               if (pc->IsPreproc())
+               {
+                  output_to_column(pc->GetNlColumn(), (pp_indent_with_tabs >= 1));
+               }
+               else
+               {
+                  output_to_column(pc->GetNlColumn(), (options::indent_with_tabs() >= 1));
+               }
             }
             add_char('\n');
          }
 
-         cpd.did_newline = 1;
+         cpd.did_newline = true;
          cpd.column      = 1;
-         LOG_FMT(LOUTIND, " xx\n");
       }
-      else if (chunk_is_token(pc, CT_NL_CONT))
+      else if (pc->Is(E_Token::CT_NL_CONT))
       {
          // FIXME: this really shouldn't be done here!
-         if (!pc->flags.test(PCF_WAS_ALIGNED))
+         if (!pc->TestFlags(PCF_WAS_ALIGNED))
          {
             // Add or remove space before a backslash-newline at the end of a line.
             log_rule_B("sp_before_nl_cont");
@@ -662,80 +878,87 @@ void output_text(FILE *pfile)
             if (options::sp_before_nl_cont() & IARF_REMOVE)
             {
                log_rule_B("sp_before_nl_cont");
-               pc->column = cpd.column + (options::sp_before_nl_cont() == IARF_FORCE);
+               pc->SetColumn(cpd.column + (options::sp_before_nl_cont() == IARF_FORCE));
             }
             else
             {
                // Try to keep the same relative spacing
-               Chunk *prev = pc->GetPrev();
+               Chunk const *prev = pc->GetPrev();
 
-               if (chunk_is_token(prev, CT_PP_IGNORE))
+               if (prev->Is(E_Token::CT_PP_IGNORE))
                {
                   /*
                    * Want to completely leave alone PP_IGNORE'd blocks because
                    * they likely have special column aligned newline
                    * continuations (common in multiline macros)
                    */
-                  pc->column = pc->orig_col;
+                  pc->SetColumn(pc->GetOrigCol());
                }
                else
                {
                   // Try to keep the same relative spacing
-                  while (  prev != nullptr
-                        && prev->IsNotNullChunk()
-                        && prev->orig_col == 0
-                        && prev->nl_count == 0)
+                  while (  prev->IsNotNullChunk()
+                        && prev->GetOrigCol() == 0
+                        && prev->GetNlCount() == 0)
                   {
                      prev = prev->GetPrev();
                   }
 
-                  if (  prev != nullptr
-                     && prev->IsNotNullChunk()
-                     && prev->nl_count == 0)
+                  if (  prev->IsNotNullChunk()
+                     && prev->GetNlCount() == 0)
                   {
-                     int orig_sp = (pc->orig_col - prev->orig_col_end);
+                     int orig_sp = pc->GetOrigPrevSp();
 
-                     if ((int)(cpd.column + orig_sp) < 0)
+                     if (static_cast<int>(cpd.column + orig_sp) < 0)
                      {
 #ifdef WIN32
-                        fprintf(stderr, "FATAL: negative value.\n   pc->orig_col is %d, prev->orig_col_end is %d\n",
-                                (int)pc->orig_col, (int)prev->orig_col_end);
+                        fprintf(stderr, "FATAL: negative value.\n   pc->GetOrigCol() is %d, prev->GetOrigColEnd() is %d\n",
+                                static_cast<int>(pc->GetOrigCol()), static_cast<int>(prev->GetOrigColEnd()));
 #else // not WIN32
-                        fprintf(stderr, "FATAL: negative value.\n   pc->orig_col is %zu, prev->orig_col_end is %zu\n",
-                                pc->orig_col, prev->orig_col_end);
+                        fprintf(stderr, "FATAL: negative value.\n   pc->GetOrigCol() is %zu, prev->GetOrigColEnd() is %zu\n",
+                                pc->GetOrigCol(), prev->GetOrigColEnd());
 #endif // ifdef WIN32
                         log_flush(true);
                         exit(EX_SOFTWARE);
                      }
-                     pc->column = cpd.column + orig_sp;
+                     pc->SetColumn(cpd.column + orig_sp);
 
                      // Add or remove space before a backslash-newline at the end of a line.
                      log_rule_B("sp_before_nl_cont");
 
                      if (  (options::sp_before_nl_cont() != IARF_IGNORE)
-                        && (pc->column < (cpd.column + 1)))
+                        && (pc->GetColumn() < (cpd.column + 1)))
                      {
-                        pc->column = cpd.column + 1;
+                        pc->SetColumn(cpd.column + 1);
                      }
                   }
                }
             }
-            output_to_column(pc->column, false);
+            output_to_column(pc->GetColumn(), false);
          }
          else
          {
-            log_rule_B("indent_with_tabs");
-            output_to_column(pc->column, (options::indent_with_tabs() == 2));
+            log_rule_B("indent_with_tabs - newline cont");
+
+            if (pc->IsPreproc())
+            {
+               output_to_column(pc->GetColumn(), (pp_indent_with_tabs == 2));
+            }
+            else
+            {
+               output_to_column(pc->GetColumn(), (options::indent_with_tabs() == 2));
+            }
          }
          add_char('\\');
          add_char('\n');
-         cpd.did_newline = 1;
+         cpd.did_newline = true;
          cpd.column      = 1;
-         LOG_FMT(LOUTIND, " \\xx\n");
       }
-      else if (chunk_is_token(pc, CT_COMMENT_MULTI))
+      else if (pc->Is(E_Token::CT_COMMENT_MULTI))
       {
          log_rule_B("cmt_indent_multi");
+         log_rule_B("cmt_convert_tab_to_spaces - multi");
+         cpd.output_tab_as_space = options::cmt_convert_tab_to_spaces();
 
          if (options::cmt_indent_multi())
          {
@@ -746,8 +969,13 @@ void output_text(FILE *pfile)
             output_comment_multi_simple(pc);
          }
       }
-      else if (chunk_is_token(pc, CT_COMMENT_CPP))
+      else if (  pc->Is(E_Token::CT_COMMENT_CPP)
+              || pc->Is(E_Token::CT_COMMENT_CPP_ENDIF))
       {
+         log_rule_B("cmt_comment_cpp");
+         log_rule_B("cmt_convert_tab_to_spaces - comment_cpp");
+         cpd.output_tab_as_space = options::cmt_convert_tab_to_spaces();
+
          bool tmp = cpd.output_trailspace;
          /*
           * keep trailing spaces if they are still present in a chunk;
@@ -758,70 +986,80 @@ void output_text(FILE *pfile)
          pc                    = output_comment_cpp(pc);
          cpd.output_trailspace = tmp;
       }
-      else if (chunk_is_token(pc, CT_COMMENT))
+      else if (  pc->Is(E_Token::CT_COMMENT)
+              || pc->Is(E_Token::CT_COMMENT_ENDIF))
       {
+         log_rule_B("cmt_comment");
+         log_rule_B("cmt_convert_tab_to_spaces - comment");
+         cpd.output_tab_as_space = options::cmt_convert_tab_to_spaces();
+
          pc = output_comment_c(pc);
       }
-      else if (  chunk_is_token(pc, CT_JUNK)
-              || chunk_is_token(pc, CT_IGNORED))
+      else if (  pc->Is(E_Token::CT_JUNK)
+              || pc->Is(E_Token::CT_IGNORED))
       {
-         LOG_FMT(LOUTIND, "%s(%d): orig_line is %zu, orig_col is %zu,\npc->Text() >%s<, pc->str.size() is %zu\n",
-                 __func__, __LINE__, pc->orig_line, pc->orig_col, pc->Text(), pc->str.size());
+         LOG_FMT(LOUTIND, "%s(%d): orig line is %zu, orig col is %zu,\ntext >%s<, pc->str.size() is %zu\n",
+                 __func__, __LINE__, pc->GetOrigLine(), pc->GetOrigCol(), pc->GetLogText(), pc->GetText().size());
          // do not adjust the column for junk
-         add_text(pc->str, true);
+         add_text(pc->GetText(), true);
       }
       else if (pc->Len() == 0)
       {
          // don't do anything for non-visible stuff
-         LOG_FMT(LOUTIND, "%s(%d): orig_line is %zu, column is %zu, non-visible stuff: type is %s\n",
-                 __func__, __LINE__, pc->orig_line, pc->column, get_token_name(pc->type));
+         LOG_FMT(LOUTIND, "%s(%d): orig line is %zu, column is %zu, non-visible stuff: type is %s\n",
+                 __func__, __LINE__, pc->GetOrigLine(), pc->GetColumn(), get_token_name(pc->GetType()));
       }
       else
       {
          bool allow_tabs;
-         cpd.output_trailspace = (chunk_is_token(pc, CT_STRING_MULTI));
+         cpd.output_trailspace = (pc->Is(E_Token::CT_STRING_MULTI));
 
          // indent to the 'level' first
          if (cpd.did_newline)
          {
-            log_rule_B("indent_with_tabs");
-
-            if (options::indent_with_tabs() == 1)
+            if (  (  pc->IsPreproc()
+                  && pp_indent_with_tabs == 1)
+               || (  !pc->IsPreproc()
+                  && options::indent_with_tabs() == 1))
             {
                size_t lvlcol;
 
                /*
-                * FIXME: it would be better to properly set column_indent in
+                * FIXME: it would be better to properly set m_columnIndent in
                 * indent_text(), but this hack for '}' and '#' seems to work.
                 */
-               if (  chunk_is_token(pc, CT_BRACE_CLOSE)
-                  || chunk_is_token(pc, CT_CASE_COLON)
-                  || chunk_is_token(pc, CT_PREPROC))
+               if (  pc->Is(E_Token::CT_BRACE_CLOSE)
+                  || pc->Is(E_Token::CT_CASE_COLON)
+                  || pc->IsPreproc())
                {
-                  lvlcol = pc->column;
+                  lvlcol = pc->GetColumn();
                }
                else
                {
-                  lvlcol = pc->column_indent;
+                  lvlcol = pc->GetColumnIndent();
 
-                  if (lvlcol > pc->column)
+                  if (lvlcol > pc->GetColumn())
                   {
-                     lvlcol = pc->column;
+                     lvlcol = pc->GetColumn();
                   }
                }
 
                if (lvlcol > 1)
                {
+                  log_rule_B("indent_with_tabs - hack");
                   output_to_column(lvlcol, true);
                }
             }
             log_rule_B("indent_with_tabs");
-            allow_tabs = (options::indent_with_tabs() == 2)
+            allow_tabs = (  pc->IsPreproc()
+                         && pp_indent_with_tabs == 2)
+                         || (  !pc->IsPreproc()
+                            && options::indent_with_tabs() == 2)
                          || (  pc->IsComment()
                             && options::indent_with_tabs() != 0);
 
-            LOG_FMT(LOUTIND, "%s(%d): orig_line is %zu, column is %zu, column_indent is %zu, cpd.column is %zu\n",
-                    __func__, __LINE__, pc->orig_line, pc->column, pc->column_indent, cpd.column);
+            LOG_FMT(LOUTIND, "%s(%d): orig line is %zu, column is %zu, column indent is %zu, cpd.column is %zu\n",
+                    __func__, __LINE__, pc->GetOrigLine(), pc->GetColumn(), pc->GetColumnIndent(), cpd.column);
          }
          else
          {
@@ -831,50 +1069,52 @@ void output_text(FILE *pfile)
              * This has to be done here because comments are not formatted
              * until the output phase.
              */
-            if (pc->column < cpd.column)
+
+            if (pc->GetColumn() < cpd.column)
             {
                reindent_line(pc, cpd.column);
             }
             // not the first item on a line
-            Chunk *prev = pc->GetPrev();
+            Chunk const *prev = pc->GetPrev();
             log_rule_B("align_with_tabs");
             allow_tabs = (  options::align_with_tabs()
-                         && pc->flags.test(PCF_WAS_ALIGNED)
-                         && ((prev->column + prev->Len() + 1) != pc->column));
+                         && pc->TestFlags(PCF_WAS_ALIGNED)
+                         && ((prev->GetColumnEnd() + 1) != pc->GetColumn()));
 
             log_rule_B("align_keep_tabs");
 
             if (options::align_keep_tabs())
             {
-               allow_tabs |= pc->after_tab;
+               allow_tabs |= pc->GetAfterTab();
             }
             LOG_FMT(LOUTIND, "%s(%d): at column %zu(%s)\n",
-                    __func__, __LINE__, pc->column, (allow_tabs ? "true" : "FALSE"));
+                    __func__, __LINE__, pc->GetColumn(), (allow_tabs ? "true" : "FALSE"));
          }
-         output_to_column(pc->column, allow_tabs);
+         output_to_column(pc->GetColumn(), allow_tabs);
 
-         if (write_in_tracking)
+         if (tracking_is_on) // we use the tracking
          {
-            if (chunk_is_token(pc, CT_ANGLE_OPEN))
+            if (pc->Is(E_Token::CT_ANGLE_OPEN))
             {
-               add_text("&lt;", false, false);
+               add_text("&lt;");
             }
-            else if (chunk_is_token(pc, CT_ANGLE_CLOSE))
+            else if (pc->Is(E_Token::CT_ANGLE_CLOSE))
             {
-               add_text("&gt;", false, false);
+               add_text("&gt;");
             }
             else
             {
-               add_text(pc->str, false, chunk_is_token(pc, CT_STRING));
+               add_text(pc->GetText(), false, pc->Is(E_Token::CT_STRING));
             }
-            write_in_tracking = false;
+            // insert <here> the HTML code for the tracking
+            DecodeTrackingData_SP(pc);
          }
-         else
+         else              // standard output
          {
-            add_text(pc->str, false, chunk_is_token(pc, CT_STRING));
+            add_text(pc->GetText(), false, pc->Is(E_Token::CT_STRING));
          }
 
-         if (chunk_is_token(pc, CT_PP_DEFINE))  // Issue #876
+         if (pc->Is(E_Token::CT_PP_DEFINE))  // Issue #876
          {
             // If true, a <TAB> is inserted after #define.
             log_rule_B("force_tab_after_define");
@@ -884,44 +1124,14 @@ void output_text(FILE *pfile)
                add_char('\t');
             }
          }
-         cpd.did_newline       = chunk_is_newline(pc);
+         cpd.did_newline       = pc->IsNewline();
          cpd.output_trailspace = false;
       }
+   } // loop over the whole chunk list
 
-      if (pc->tracking != nullptr)
-      {
-         LOG_FMT(LGUY, " Tracking info are: \n");
-         LOG_FMT(LGUY, "  number of track(s) %zu\n", pc->tracking->size());
-         add_text("<a title=\"");
-         char tempText[80];
-
-         for (size_t track = 0; track < pc->tracking->size(); track++)
-         {
-            track_list *A       = pc->tracking;
-            Track_nr   B        = A->at(track);
-            size_t     Bfirst   = B.first;
-            char       *Bsecond = B.second;
-
-            sprintf(tempText, "%zu", Bfirst);
-            add_text(tempText);
-            add_text(",");
-
-            if (track == pc->tracking->size() - 1)
-            {
-               sprintf(tempText, "%s", Bsecond);
-               add_text(tempText);
-            }
-            LOG_FMT(LGUY, "  %zu, tracking number is %zu\n", track, Bfirst);
-            LOG_FMT(LGUY, "  %zu, rule            is %s\n", track, Bsecond);
-         }
-
-         add_text("\"><font color=\"red\">M</font></a>");
-         write_in_tracking = true;
-      }
-   }
-
-   if (tracking)
+   if (tracking_is_on)
    {
+      set_numbering(false);
       add_text("</pre>\n");
       add_text("</body>\n");
       add_text("</html>\n");
@@ -929,53 +1139,7 @@ void output_text(FILE *pfile)
 } // output_text
 
 
-void dump_step(const char *filename, const char *step_description)
-{
-   static int file_num = 0;
-   char       buffer[256];
-   FILE       *dump_file;
-
-   if (  filename == nullptr
-      || strlen(filename) == 0)
-   {
-      return;
-   }
-
-   // On the first call, also save the options in use
-   if (file_num == 0)
-   {
-      snprintf(buffer, 256, "New dump file: %s_%03d.log - Options in use", filename, file_num);
-      log_rule_B(buffer);
-
-      snprintf(buffer, 256, "%s_%03d.log", filename, file_num);
-      ++file_num;
-
-      dump_file = fopen(buffer, "wb");
-
-      if (dump_file != nullptr)
-      {
-         save_option_file(dump_file, false, true);
-         fclose(dump_file);
-      }
-   }
-   snprintf(buffer, 256, "New dump file: %s_%03d.log - %s", filename, file_num, step_description);
-   log_rule_B(buffer);
-
-   snprintf(buffer, 256, "%s_%03d.log", filename, file_num);
-   ++file_num;
-
-   dump_file = fopen(buffer, "wb");
-
-   if (dump_file != nullptr)
-   {
-      fprintf(dump_file, "STEP: %s\n--------------\n", step_description);
-      output_parsed(dump_file, false);
-      fclose(dump_file);
-   }
-} // dump_step
-
-
-static size_t cmt_parse_lead(const unc_text &line, bool is_last)
+static size_t cmt_parse_lead(const UncText &line, bool is_last)
 {
    size_t len = 0;
 
@@ -1061,7 +1225,7 @@ static int eat_line_whitespace(const String &str,
       //       think that the following is a template. This will NEED to be fixed!!!
       //       For now, reformulate the statement
       //return(forward ? i<int(str.size()) : i> = 0);
-      return(forward ? (i < int(str.size())) : (i >= 0));
+      return(forward ? (i < static_cast<int>(str.size())) : (i >= 0));
    };
 
    while (  index_in_range(idx)
@@ -1163,7 +1327,7 @@ static int match_doxygen_javadoc_tag(const std::wstring &str, size_t idx)
          if (  it_block_tag != block_tags.end()
             && javaparam_tag_is_start_of_line(str, idx))
          {
-            return(int(idx + match[1].length()));
+            return(static_cast<int>(idx + match[1].length()));
          }
       }
    }
@@ -1206,7 +1370,7 @@ static void calculate_doxygen_javadoc_indent_alignment(const std::wstring &str,
 
          size_t param_name_width = 0;
 
-         if (str.find(L"@param", start_idx) == size_t(start_idx))
+         if (str.find(L"@param", start_idx) == static_cast<size_t>(start_idx))
          {
             param_name_width = 1;
 
@@ -1246,7 +1410,7 @@ static void calculate_doxygen_javadoc_indent_alignment(const std::wstring &str,
 } // calculate_doxygen_javadoc_indent_alignment
 
 
-static void calculate_comment_body_indent(cmt_reflow &cmt, const unc_text &str)
+static void calculate_comment_body_indent(cmt_reflow &cmt, const UncText &str)
 {
    cmt.xtra_indent = 0;
 
@@ -1379,53 +1543,48 @@ static void calculate_comment_body_indent(cmt_reflow &cmt, const unc_text &str)
 
 
 // TODO: can we use search_next_chunk here?
-static Chunk *get_next_function(Chunk *pc)
+static Chunk const *get_next_function(Chunk const *pc)
 {
-   if (pc == nullptr)
-   {
-      pc = Chunk::NullChunkPtr;
-   }
-
    while ((pc = pc->GetNext())->IsNotNullChunk())
    {
-      if (  chunk_is_token(pc, CT_FUNC_DEF)
-         || chunk_is_token(pc, CT_FUNC_PROTO)
-         || chunk_is_token(pc, CT_FUNC_CLASS_DEF)
-         || chunk_is_token(pc, CT_FUNC_CLASS_PROTO)
-         || chunk_is_token(pc, CT_OC_MSG_DECL))
+      if (  pc->Is(E_Token::CT_FUNC_DEF)
+         || pc->Is(E_Token::CT_FUNC_PROTO)
+         || pc->Is(E_Token::CT_FUNC_CLASS_DEF)
+         || pc->Is(E_Token::CT_FUNC_CLASS_PROTO)
+         || pc->Is(E_Token::CT_OC_MSG_DECL))
       {
          return(pc);
       }
    }
-   return(nullptr);
+   return(Chunk::NullChunkPtr);
 }
 
 
-static Chunk *get_next_class(Chunk *pc)
+static Chunk *get_next_class(Chunk const *pc)
 {
-   return(chunk_search_next_cat(pc, CT_CLASS)->GetNext());
+   return(pc->GetNextType(E_Token::CT_CLASS)->GetNext());
 }
 
 
-static Chunk *get_prev_category(Chunk *pc)
+static Chunk *get_prev_category(Chunk const *pc)
 {
-   return(chunk_search_prev_cat(pc, CT_OC_CATEGORY));
+   return(pc->GetPrevType(E_Token::CT_OC_CATEGORY));
 }
 
 
-static Chunk *get_next_scope(Chunk *pc)
+static Chunk *get_next_scope(Chunk const *pc)
 {
-   return(chunk_search_next_cat(pc, CT_OC_SCOPE));
+   return(pc->GetNextType(E_Token::CT_OC_SCOPE));
 }
 
 
-static Chunk *get_prev_oc_class(Chunk *pc)
+static Chunk *get_prev_oc_class(Chunk const *pc)
 {
-   return(chunk_search_prev_cat(pc, CT_OC_CLASS));
+   return(pc->GetPrevType(E_Token::CT_OC_CLASS));
 }
 
 
-static int next_up(const unc_text &text, size_t idx, const unc_text &tag)
+static int next_up(const UncText &text, size_t idx, const UncText &tag)
 {
    size_t offs = 0;
 
@@ -1444,10 +1603,10 @@ static int next_up(const unc_text &text, size_t idx, const unc_text &tag)
 }
 
 
-static void add_comment_text(const unc_text &text,
-                             cmt_reflow     &cmt,
-                             bool           esc_close,
-                             size_t         continuation_indent)
+static void add_comment_text(const UncText &text,
+                             cmt_reflow    &cmt,
+                             bool          esc_close,
+                             size_t        continuation_indent)
 {
    bool   was_star  = false;
    bool   was_slash = false;
@@ -1602,9 +1761,9 @@ static void add_comment_text(const unc_text &text,
 static void output_cmt_start(cmt_reflow &cmt, Chunk *pc)
 {
    cmt.pc          = pc;
-   cmt.column      = pc->column;
-   cmt.brace_col   = pc->column_indent;
-   cmt.base_col    = pc->column_indent;
+   cmt.column      = pc->GetColumn();
+   cmt.brace_col   = pc->GetColumnIndent();
+   cmt.base_col    = pc->GetColumnIndent();
    cmt.word_count  = 0;
    cmt.xtra_indent = 0;
    cmt.cont_text.clear();
@@ -1613,7 +1772,7 @@ static void output_cmt_start(cmt_reflow &cmt, Chunk *pc)
    // Issue #2752
    log_rule_B("cmt_insert_file_header");
    log_rule_B("cmt_insert_file_footer");
-   log_rule_B("cmt_insert_func_header)");
+   log_rule_B("cmt_insert_func_header");
    log_rule_B("cmt_insert_class_header");
    log_rule_B("cmt_insert_oc_msg_header");
 
@@ -1634,20 +1793,21 @@ static void output_cmt_start(cmt_reflow &cmt, Chunk *pc)
    if (cmt.brace_col == 0)
    {
       log_rule_B("output_tab_size");
-      cmt.brace_col = 1 + (pc->brace_level * options::output_tab_size());
+      cmt.brace_col = 1 + (pc->GetBraceLevel() * options::output_tab_size());
    }
    // LOG_FMT(LSYS, "%s: line %zd, brace=%zd base=%zd col=%zd orig=%zd aligned=%x\n",
-   //        __func__, pc->orig_line, cmt.brace_col, cmt.base_col, cmt.column, pc->orig_col,
-   //        pc->flags & (PCF_WAS_ALIGNED | PCF_RIGHT_COMMENT));
+   //        __func__, pc->GetOrigLine(), cmt.brace_col, cmt.base_col, cmt.column, pc->GetOrigCol(),
+   //        pc->GetFlags() & (PCF_WAS_ALIGNED | PCF_RIGHT_COMMENT));
 
-   if (  get_chunk_parent_type(pc) == CT_COMMENT_START
-      || get_chunk_parent_type(pc) == CT_COMMENT_WHOLE)
+   if (  pc->GetParentType() == E_Token::CT_COMMENT_START
+      || pc->GetParentType() == E_Token::CT_COMMENT_WHOLE)
    {
       log_rule_B("indent_col1_comment");
 
       if (  !options::indent_col1_comment()
-         && pc->orig_col == 1
-         && !pc->flags.test(PCF_INSERTED))
+         && pc->GetOrigCol() == 1
+         && !pc->TestFlags(PCF_INSERTED)
+         && !pc->TestFlags(PCF_RIGHT_COMMENT_CONT))
       {
          cmt.column    = 1;
          cmt.base_col  = 1;
@@ -1658,13 +1818,13 @@ static void output_cmt_start(cmt_reflow &cmt, Chunk *pc)
    log_rule_B("indent_cmt_with_tabs");
 
    if (  options::indent_cmt_with_tabs()
-      && (  get_chunk_parent_type(pc) == CT_COMMENT_END
-         || get_chunk_parent_type(pc) == CT_COMMENT_WHOLE))
+      && (  pc->GetParentType() == E_Token::CT_COMMENT_END
+         || pc->GetParentType() == E_Token::CT_COMMENT_WHOLE))
    {
       cmt.column = align_tab_column(cmt.column - 1);
       // LOG_FMT(LSYS, "%s: line %d, orig:%d new:%d\n",
-      //        __func__, pc->orig_line, pc->column, cmt.column);
-      pc->column = cmt.column;
+      //        __func__, pc->GetOrigLine(), pc->GetColumn(), cmt.column);
+      pc->SetColumn(cmt.column);
    }
    cmt.base_col = cmt.column;
 
@@ -1676,34 +1836,29 @@ static void output_cmt_start(cmt_reflow &cmt, Chunk *pc)
 } // output_cmt_start
 
 
-static bool can_combine_comment(Chunk *pc, cmt_reflow &cmt)
+static bool can_combine_comment(Chunk const *pc, const cmt_reflow &cmt)
 {
    // We can't combine if there is something other than a newline next
-   if (get_chunk_parent_type(pc) == CT_COMMENT_START)
+   if (pc->GetParentType() == E_Token::CT_COMMENT_START)
    {
       return(false);
    }
-
    // next is a newline for sure, make sure it is a single newline
-   if (pc == nullptr)
-   {
-      pc = Chunk::NullChunkPtr;
-   }
-   Chunk *next = pc->GetNext();
+   Chunk const *next = pc->GetNext();
 
    if (  next->IsNotNullChunk()
-      && next->nl_count == 1)
+      && next->GetNlCount() == 1)
    {
       // Make sure the comment is the same type at the same column
       next = next->GetNext();
 
-      if (  chunk_is_token(next, pc->type)
-         && (  (  next->column == 1
-               && pc->column == 1)
-            || (  next->column == cmt.base_col
-               && pc->column == cmt.base_col)
-            || (  next->column > cmt.base_col
-               && get_chunk_parent_type(pc) == CT_COMMENT_END)))
+      if (  next->Is(pc->GetType())
+         && (  (  next->GetColumn() == 1
+               && pc->GetColumn() == 1)
+            || (  next->GetColumn() == cmt.base_col
+               && pc->GetColumn() == cmt.base_col)
+            || (  next->GetColumn() > cmt.base_col
+               && pc->GetParentType() == E_Token::CT_COMMENT_END)))
       {
          return(true);
       }
@@ -1731,20 +1886,35 @@ static Chunk *output_comment_c(Chunk *first)
       cmt.cont_text = options::cmt_star_cont() ? " * " : "   ";
       LOG_CONTTEXT();
 
-      log_rule_B("cmt_trailing_single_line_c_to_cpp");
+      bool replace_comment = (  options::cmt_trailing_single_line_c_to_cpp()
+                             && first->IsLastChunkOnLine()
+                             && first->Text().at(2) != '*');
 
-      if (options::cmt_trailing_single_line_c_to_cpp() && chunk_is_last_on_line(first))
+      if (  replace_comment
+         && first->TestFlags(PCF_IN_PREPROC))
       {
-         add_text("//");
+         // Do not replace a single line comment if we are inside a #define line
+         if (first->GetPpStart()->GetParentType() == E_Token::CT_PP_DEFINE)
+         {
+            replace_comment = false;
+         }
+      }
 
-         unc_text tmp;
-         tmp.set(first->str, 2, first->Len() - 4);
+      if (replace_comment)
+      {
+         // Transform the comment to CPP and reuse the same logic (issue #4121)
+         log_rule_B("cmt_trailing_single_line_c_to_cpp");
+
+         UncText tmp(first->GetText(), 0, first->Len() - 2);
+         tmp.at(1) = '/'; // Change '/*' to '//'
          cmt_trim_whitespace(tmp, false);
-         add_comment_text(tmp, cmt, false);
+         first->Text() = tmp;
+
+         output_comment_cpp(first);
       }
       else
       {
-         add_comment_text(first->str, cmt, false);
+         add_comment_text(first->GetText(), cmt, false);
       }
       return(first);
    }
@@ -1760,18 +1930,17 @@ static Chunk *output_comment_c(Chunk *first)
    {
       add_comment_text("\n", cmt, false);
    }
-   Chunk    *pc = first;
-   unc_text tmp;
+   Chunk   *pc = first;
+   UncText tmp;
 
    while (can_combine_comment(pc, cmt))
    {
-      LOG_FMT(LCONTTEXT, "%s(%d): Text() is '%s'\n",
-              __func__, __LINE__, pc->Text());
-      tmp.set(pc->str, 2, pc->Len() - 4);
+      LOG_FMT(LCONTTEXT, "%s(%d): text is '%s'\n",
+              __func__, __LINE__, pc->GetLogText());
+      tmp.set(pc->GetText(), 2, pc->Len() - 4);
 
       if (  cpd.last_char == '*'
-         && (  tmp[0] == '/'
-            || tmp[0] != ' '))                 // Issue #1908
+         && tmp[0] != ' ')                 // Issue #1908
       {
          LOG_FMT(LCONTTEXT, "%s(%d): add_text a " "\n", __func__, __LINE__);
          add_text(" ");
@@ -1780,7 +1949,7 @@ static Chunk *output_comment_c(Chunk *first)
       LOG_FMT(LCONTTEXT, "%s(%d): trim\n", __func__, __LINE__);
       cmt_trim_whitespace(tmp, false);
       LOG_FMT(LCONTTEXT, "%s(%d): add_comment_text(tmp is '%s')\n",
-              __func__, __LINE__, tmp.c_str());
+              __func__, __LINE__, tmp.GetLogText());
       add_comment_text(tmp, cmt, false);
       LOG_FMT(LCONTTEXT, "%s(%d): add_comment_text(newline)\n",
               __func__, __LINE__);
@@ -1788,7 +1957,7 @@ static Chunk *output_comment_c(Chunk *first)
       pc = pc->GetNext();
       pc = pc->GetNext();
    }
-   tmp.set(pc->str, 2, pc->Len() - 4);
+   tmp.set(pc->GetText(), 2, pc->Len() - 4);
 
    if (  cpd.last_char == '*'
       && tmp[0] == '/')
@@ -1820,7 +1989,7 @@ static Chunk *output_comment_cpp(Chunk *first)
    log_rule_B("cmt_reflow_mode");
    cmt.reflow = (options::cmt_reflow_mode() != 1);
 
-   unc_text leadin = "//";             // default setting to keep previous behaviour
+   UncText leading = "//";             // default setting to keep previous behaviour
 
    // If true, space is added with sp_cmt_cpp_start will be added after doxygen
    // sequences like '///', '///<', '//!' and '//!<'.
@@ -1828,18 +1997,18 @@ static Chunk *output_comment_cpp(Chunk *first)
 
    if (options::sp_cmt_cpp_doxygen())  // special treatment for doxygen style comments (treat as unity)
    {
-      const char *sComment = first->Text();
+      const char *sComment = first->GetLogText();
       bool       grouping  = (sComment[2] == '@');
       size_t     brace     = 3;
 
       if (  sComment[2] == '/'
          || sComment[2] == '!') // doxygen style found!
       {
-         leadin += sComment[2];                     // at least one additional char (either "///" or "//!")
+         leading += sComment[2];                    // at least one additional char (either "///" or "//!")
 
          if (sComment[3] == '<')                    // and a further one (either "///<" or "//!<")
          {
-            leadin += '<';
+            leading += '<';
          }
          else
          {
@@ -1852,8 +2021,8 @@ static Chunk *output_comment_cpp(Chunk *first)
          && (  sComment[brace] == '{'
             || sComment[brace] == '}'))
       {
-         leadin += '@';
-         leadin += sComment[brace];
+         leading += '@';
+         leading += sComment[brace];
       }
    }
    // Special treatment for Qt translator or meta-data comments (treat as unity)
@@ -1863,13 +2032,13 @@ static Chunk *output_comment_cpp(Chunk *first)
 
    if (options::sp_cmt_cpp_qttr())
    {
-      const int c = first->str[2];
+      const int c = first->GetText()[2];
 
       if (  c == ':'
          || c == '='
          || c == '~')
       {
-         leadin += c;
+         leading += c;
       }
    }
    // CPP comments can't be grouped unless they are converted to C comments
@@ -1877,12 +2046,12 @@ static Chunk *output_comment_cpp(Chunk *first)
 
    if (!options::cmt_cpp_to_c())
    {
-      auto const *cmt_text = first->str.c_str() + 2;
+      char const *cmt_text = first->GetText().GetLogText() + 2;
       // Add or remove space after the opening of a C++ comment,
       // i.e. '// A' vs. '//A'.
       auto *sp_cmt = &options::sp_cmt_cpp_start;
 
-      cmt.cont_text = leadin;
+      cmt.cont_text = leading;
 
       // Get start of comment text
       while (  *cmt_text != '\0'
@@ -1892,8 +2061,8 @@ static Chunk *output_comment_cpp(Chunk *first)
       }
 
       // Determine if we are dealing with a region marker
-      if (  (  !first->prev
-            || first->prev->orig_line != first->orig_line)
+      if (  (  first->GetPrev()->IsNullChunk()
+            || first->GetPrev()->GetOrigLine() != first->GetOrigLine())
          && (  strncmp(cmt_text, "BEGIN", 5) == 0
             || strncmp(cmt_text, "END", 3) == 0))
       {
@@ -1908,6 +2077,7 @@ static Chunk *output_comment_cpp(Chunk *first)
       // i.e. '// A' vs. '//A'.
       log_rule_B(sp_cmt->name());
 
+      //iarf_e a = (*sp_cmt)();
       if ((*sp_cmt)() != IARF_REMOVE)
       {
          cmt.cont_text += ' ';
@@ -1920,15 +2090,15 @@ static Chunk *output_comment_cpp(Chunk *first)
 
       if ((*sp_cmt)() == IARF_IGNORE)
       {
-         add_comment_text(first->str, cmt, false);
+         add_comment_text(first->GetText(), cmt, false);
       }
       else
       {
-         size_t   iLISz = leadin.size();
-         unc_text tmp(first->str, 0, iLISz);
+         size_t  iLISz = leading.size();
+         UncText tmp(first->GetText(), 0, iLISz);
          add_comment_text(tmp, cmt, false);
 
-         tmp.set(first->str, iLISz, first->Len() - iLISz);
+         tmp.set(first->GetText(), iLISz, first->Len() - iLISz);
 
          // Add or remove space after the opening of a C++ comment,
          // i.e. '// A' vs. '//A'.
@@ -1954,7 +2124,26 @@ static Chunk *output_comment_cpp(Chunk *first)
                if (  !unc_isspace(tmp[0])
                   && (tmp[0] != '/'))
                {
-                  add_comment_text(" ", cmt, false);
+                  // only with sp_cmt_cpp_start set to 'add' or 'force'
+                  bool    sp_cmt_pvs  = options::sp_cmt_cpp_pvs();  // Issue #3919
+                  bool    sp_cmt_lint = options::sp_cmt_cpp_lint(); // Issue #3614
+                  UncText temp        = first->GetText();
+                  int     PVS         = temp.find("//-V");
+                  int     LINT        = temp.find("//lint");
+
+                  // @return == -1 if not found
+                  // @return >=  0 the position
+                  if (  (  PVS == 0
+                        && sp_cmt_pvs)
+                     || (  LINT == 0
+                        && sp_cmt_lint))
+                  {
+                     // do not include a space
+                  }
+                  else
+                  {
+                     add_comment_text(" ", cmt, false);
+                  }
                }
             }
             add_comment_text(tmp, cmt, false);
@@ -1967,7 +2156,7 @@ static Chunk *output_comment_cpp(Chunk *first)
    cmt.cont_text = options::cmt_star_cont() ? " * " : "   ";
    LOG_CONTTEXT();
 
-   unc_text tmp;
+   UncText tmp;
 
    // See if we can combine this comment with the next comment
    log_rule_B("cmt_cpp_group");
@@ -1983,12 +2172,12 @@ static Chunk *output_comment_cpp(Chunk *first)
       // i.e. '// A' vs. '//A'.
       log_rule_B("sp_cmt_cpp_start");
 
-      if (  !unc_isspace(first->str[2])
+      if (  !unc_isspace(first->GetText()[2])
          && (options::sp_cmt_cpp_start() & IARF_ADD))
       {
          add_char(' ');
       }
-      tmp.set(first->str, 2, first->Len() - 2);
+      tmp.set(first->GetText(), 2, first->Len() - 2);
       add_comment_text(tmp, cmt, true);
       add_text(" */");
       return(first);
@@ -2010,8 +2199,8 @@ static Chunk *output_comment_cpp(Chunk *first)
 
    while (can_combine_comment(pc, cmt))
    {
-      offs = unc_isspace(pc->str[2]) ? 1 : 0;
-      tmp.set(pc->str, 2 + offs, pc->Len() - (2 + offs));
+      offs = unc_isspace(pc->GetText()[2]) ? 1 : 0;
+      tmp.set(pc->GetText(), 2 + offs, pc->Len() - (2 + offs));
 
       if (  cpd.last_char == '*'
          && tmp[0] == '/')
@@ -2022,8 +2211,8 @@ static Chunk *output_comment_cpp(Chunk *first)
       add_comment_text("\n", cmt, false);
       pc = pc->GetNext()->GetNext();
    }
-   offs = unc_isspace(pc->str[2]) ? 1 : 0;
-   tmp.set(pc->str, 2 + offs, pc->Len() - (2 + offs));
+   offs = unc_isspace(pc->GetText()[2]) ? 1 : 0;
+   tmp.set(pc->GetText(), 2 + offs, pc->Len() - (2 + offs));
    add_comment_text(tmp, cmt, true);
 
    log_rule_B("cmt_cpp_nl_end");
@@ -2039,7 +2228,7 @@ static Chunk *output_comment_cpp(Chunk *first)
 } // output_comment_cpp
 
 
-static void cmt_trim_whitespace(unc_text &line, bool in_preproc)
+static void cmt_trim_whitespace(UncText &line, bool in_preproc)
 {
    // Remove trailing whitespace on the line
    while (  line.size() > 0
@@ -2102,25 +2291,19 @@ static std::map<std::size_t, std::pair<std::wregex, std::wregex> > get_reflow_fo
 
          while (it_regex != it_regex_end)
          {
-            std::wsmatch match = *it_regex;
+            std::wsmatch match     = *it_regex;
+            auto         &&index   = std::stoi(match[3].str());
+            std::wregex  *p_wregex = (match[1].length() > 0) ? &regex_map[index].second
+                                                     : &regex_map[index].first;
+            *p_wregex = match[4].str();
 
-            if (  ((  match[1].matched
-                   || match[2].matched))
-               && match[3].matched
-               && match[4].matched)
-            {
-               auto        &&index   = std::stoi(match[3].str());
-               std::wregex *p_wregex = match[1].matched ? &regex_map[index].second
-                                                        : &regex_map[index].first;
-               *p_wregex = match[4].str();
-            }
             ++it_regex;
          }
       }
       else
       {
-         regex_map.emplace(0L, std::make_pair(L"[\\w,\\]\\)]$", L"^[\\w,\\[\\(]"));
-         regex_map.emplace(1L, std::make_pair(L"\\.$", L"^[A-Z]"));
+         regex_map.emplace(0L, std::make_pair((std::wregex)L"[\\w,\\]\\)]$", (std::wregex)L"^[\\w,\\[\\(]"));
+         regex_map.emplace(1L, std::make_pair((std::wregex)L"\\.$", (std::wregex)L"^[A-Z]"));
       }
    }
    return(regex_map);
@@ -2129,7 +2312,7 @@ static std::map<std::size_t, std::pair<std::wregex, std::wregex> > get_reflow_fo
 
 static void output_comment_multi(Chunk *pc)
 {
-   if (pc == nullptr)
+   if (pc->IsNullChunk())
    {
       return;
    }
@@ -2137,17 +2320,17 @@ static void output_comment_multi(Chunk *pc)
 
    char       copy[1000];
 
-   LOG_FMT(LCONTTEXT, "%s(%d): Text() is '%s', type is %s, orig_col is %zu, column is %zu\n",
-           __func__, __LINE__, pc->ElidedText(copy), get_token_name(pc->type), pc->orig_col, pc->column);
+   LOG_FMT(LCONTTEXT, "%s(%d): text is '%s', type is %s, orig col is %zu, column is %zu\n",
+           __func__, __LINE__, pc->ElidedText(copy), get_token_name(pc->GetType()), pc->GetOrigCol(), pc->GetColumn());
 
    output_cmt_start(cmt, pc);
    log_rule_B("cmt_reflow_mode");
    cmt.reflow = (options::cmt_reflow_mode() != 1);
 
    size_t cmt_col  = cmt.base_col;
-   int    col_diff = pc->orig_col - cmt.base_col;
+   int    col_diff = pc->GetOrigCol() - cmt.base_col;
 
-   calculate_comment_body_indent(cmt, pc->str);
+   calculate_comment_body_indent(cmt, pc->GetText());
 
    log_rule_B("cmt_indent_multi");
    log_rule_B("cmt_star_cont");
@@ -2155,8 +2338,8 @@ static void output_comment_multi(Chunk *pc)
                    (options::cmt_star_cont() ? "* " : "  ");
    LOG_CONTTEXT();
 
-   std::wstring pc_wstring(pc->str.get().cbegin(),
-                           pc->str.get().cend());
+   std::wstring pc_wstring(pc->GetText().get().cbegin(),
+                           pc->GetText().get().cend());
 
    size_t doxygen_javadoc_param_name_indent    = 0;
    size_t doxygen_javadoc_continuation_indent  = 0;
@@ -2166,12 +2349,12 @@ static void output_comment_multi(Chunk *pc)
                                               doxygen_javadoc_param_name_indent,
                                               doxygen_javadoc_continuation_indent);
 
-   size_t   line_count                   = 0;
-   size_t   ccol                         = pc->column; // the col of subsequent comment lines
-   size_t   cmt_idx                      = 0;
-   bool     nl_end                       = false;
-   bool     doxygen_javadoc_indent_align = false;
-   unc_text line;
+   size_t  line_count                   = 0;
+   size_t  ccol                         = pc->GetColumn();  // the col of subsequent comment lines
+   size_t  cmt_idx                      = 0;
+   bool    nl_end                       = false;
+   bool    doxygen_javadoc_indent_align = false;
+   UncText line;
 
    /*
     * Get a map of regex pairs that define expressions to match at both the end
@@ -2189,21 +2372,21 @@ static void output_comment_multi(Chunk *pc)
     * check for enable/disable processing comment strings that may
     * both be embedded within the same multi-line comment
     */
-   auto disable_processing_cmt_idx = find_disable_processing_comment_marker(pc->str);
-   auto enable_processing_cmt_idx  = find_enable_processing_comment_marker(pc->str);
+   auto disable_processing_cmt_idx = find_disable_processing_comment_marker(pc->GetText());
+   auto enable_processing_cmt_idx  = find_enable_processing_comment_marker(pc->GetText());
 
    while (cmt_idx < pc->Len())
    {
-      int ch = pc->str[cmt_idx];
+      int ch = pc->GetText()[cmt_idx];
       cmt_idx++;
 
-      if (  cmt_idx > std::size_t(disable_processing_cmt_idx)
+      if (  cmt_idx > static_cast<size_t>(disable_processing_cmt_idx)
          && enable_processing_cmt_idx > disable_processing_cmt_idx)
       {
-         auto     length = enable_processing_cmt_idx - disable_processing_cmt_idx;
-         unc_text verbatim_text(pc->str,
-                                disable_processing_cmt_idx,
-                                length);
+         auto    length = enable_processing_cmt_idx - disable_processing_cmt_idx;
+         UncText verbatim_text(pc->GetText(),
+                               disable_processing_cmt_idx,
+                               length);
 
          add_text(verbatim_text);
 
@@ -2213,9 +2396,9 @@ static void output_comment_multi(Chunk *pc)
           * check for additional enable/disable processing comment strings that may
           * both be embedded within the same multi-line comment
           */
-         disable_processing_cmt_idx = find_disable_processing_comment_marker(pc->str,
+         disable_processing_cmt_idx = find_disable_processing_comment_marker(pc->GetText(),
                                                                              enable_processing_cmt_idx);
-         enable_processing_cmt_idx = find_enable_processing_comment_marker(pc->str,
+         enable_processing_cmt_idx = find_enable_processing_comment_marker(pc->GetText(),
                                                                            enable_processing_cmt_idx);
 
          /**
@@ -2231,7 +2414,7 @@ static void output_comment_multi(Chunk *pc)
          ch = '\n';
 
          if (  cmt_idx < pc->Len()
-            && pc->str[cmt_idx] == '\n')
+            && pc->GetText()[cmt_idx] == '\n')
          {
             cmt_idx++;
          }
@@ -2255,7 +2438,7 @@ static void output_comment_multi(Chunk *pc)
          }
          else
          {
-            LOG_FMT(LCONTTEXT, "%s(%d):ch is %d, %c\n", __func__, __LINE__, ch, char(ch));
+            LOG_FMT(LCONTTEXT, "%s(%d):ch is %d, %c\n", __func__, __LINE__, ch, static_cast<char>(ch));
          }
       }
 
@@ -2269,8 +2452,8 @@ static void output_comment_multi(Chunk *pc)
          {
             doxygen_javadoc_indent_align = true;
 
-            std::string match(pc->str.get().cbegin() + start_idx,
-                              pc->str.get().cbegin() + end_idx);
+            std::string match(pc->GetText().get().cbegin() + start_idx,
+                              pc->GetText().get().cbegin() + end_idx);
 
             match.erase(std::remove_if(match.begin(),
                                        match.end(),
@@ -2296,6 +2479,15 @@ static void output_comment_multi(Chunk *pc)
             {
                line.append(' ');
             }
+
+            if (pc->GetText()[end_idx] == 10)
+            {
+               // Issue #4378
+               fprintf(stderr, "%s\n", pc->ElidedText(copy));
+               fprintf(stderr, "FATAL: a doxygen argument is missing.\n");
+               log_flush(true);
+               exit(EX_SOFTWARE);
+            }
             cmt_idx += (end_idx - start_idx);
             line.append(match.c_str());
 
@@ -2307,7 +2499,7 @@ static void output_comment_multi(Chunk *pc)
                || is_param_tag
                || is_throws_tag)
             {
-               indent = int(doxygen_javadoc_param_name_indent) - int(line.size());
+               indent = static_cast<int>(doxygen_javadoc_param_name_indent) - static_cast<int>(line.size());
 
                while (indent-- > -line_size_before_indent)
                {
@@ -2316,14 +2508,14 @@ static void output_comment_multi(Chunk *pc)
 
                while (true)
                {
-                  cmt_idx = eat_line_whitespace(pc->str,
+                  cmt_idx = eat_line_whitespace(pc->GetText(),
                                                 cmt_idx);
 
                   while (  cmt_idx < pc->Len()
-                        && !unc_isspace(pc->str[cmt_idx])
-                        && pc->str[cmt_idx] != ',')
+                        && !unc_isspace(pc->GetText()[cmt_idx])
+                        && pc->GetText()[cmt_idx] != ',')
                   {
-                     line.append(pc->str[cmt_idx++]);
+                     line.append(pc->Text()[cmt_idx++]);
                   }
 
                   if (!is_param_tag)
@@ -2333,10 +2525,10 @@ static void output_comment_multi(Chunk *pc)
                   /**
                    * check for the possibility that comma-separated parameter names are present
                    */
-                  cmt_idx = eat_line_whitespace(pc->str,
+                  cmt_idx = eat_line_whitespace(pc->GetText(),
                                                 cmt_idx);
 
-                  if (pc->str[cmt_idx] != ',')
+                  if (pc->GetText()[cmt_idx] != ',')
                   {
                      break;
                   }
@@ -2344,9 +2536,9 @@ static void output_comment_multi(Chunk *pc)
                   line.append(", ");
                }
             }
-            cmt_idx = eat_line_whitespace(pc->str,
+            cmt_idx = eat_line_whitespace(pc->GetText(),
                                           cmt_idx);
-            indent = int(doxygen_javadoc_continuation_indent) - int(line.size());
+            indent = static_cast<int>(doxygen_javadoc_continuation_indent) - static_cast<int>(line.size());
 
             while (indent-- > -line_size_before_indent)
             {
@@ -2354,9 +2546,9 @@ static void output_comment_multi(Chunk *pc)
             }
 
             while (  cmt_idx < pc->Len()
-                  && !unc_isspace(pc->str[cmt_idx]))
+                  && !unc_isspace(pc->GetText()[cmt_idx]))
             {
-               line.append(pc->str[cmt_idx++]);
+               line.append(pc->Text()[cmt_idx++]);
             }
             continue;
          }
@@ -2383,7 +2575,7 @@ static void output_comment_multi(Chunk *pc)
             if (  prev_nonempty_line < 0
                && !unc_isspace(line[nwidx])
                && line[nwidx] != '*'    // block comment: skip '*' at end of line
-               && (pc->flags.test(PCF_IN_PREPROC)
+               && (pc->TestFlags(PCF_IN_PREPROC)
                    ? (  line[nwidx] != '\\'
                      || (  line[nwidx + 1] != '\r'
                         && line[nwidx + 1] != '\n'))
@@ -2395,17 +2587,17 @@ static void output_comment_multi(Chunk *pc)
 
          for (size_t nxt_idx = cmt_idx;
               (  nxt_idx < pc->Len()
-              && pc->str[nxt_idx] != '\r'
-              && pc->str[nxt_idx] != '\n');
+              && pc->GetText()[nxt_idx] != '\r'
+              && pc->GetText()[nxt_idx] != '\n');
               nxt_idx++)
          {
             if (  next_nonempty_line < 0
-               && !unc_isspace(pc->str[nxt_idx])
-               && pc->str[nxt_idx] != '*'
-               && (pc->flags.test(PCF_IN_PREPROC)
-                   ? (  pc->str[nxt_idx] != '\\'
-                     || (  pc->str[nxt_idx + 1] != '\r'
-                        && pc->str[nxt_idx + 1] != '\n'))
+               && !unc_isspace(pc->GetText()[nxt_idx])
+               && pc->GetText()[nxt_idx] != '*'
+               && (pc->TestFlags(PCF_IN_PREPROC)
+                   ? (  pc->GetText()[nxt_idx] != '\\'
+                     || (  pc->GetText()[nxt_idx + 1] != '\r'
+                        && pc->GetText()[nxt_idx + 1] != '\n'))
                    : true))
             {
                next_nonempty_line = nxt_idx;  // first non-whitespace char in the next line
@@ -2422,11 +2614,11 @@ static void output_comment_multi(Chunk *pc)
             int cmt_star_indent = 0;
 
             while (  next_nonempty_line > cmt_star_indent
-                  && pc->str[next_nonempty_line - cmt_star_indent - 1] != '*')
+                  && pc->GetText()[next_nonempty_line - cmt_star_indent - 1] != '*')
             {
                ++cmt_star_indent;
             }
-            reflow_paragraph_continuation_indent = size_t(cmt_star_indent);
+            reflow_paragraph_continuation_indent = static_cast<size_t>(cmt_star_indent);
          }
 
          /*
@@ -2460,12 +2652,12 @@ static void output_comment_multi(Chunk *pc)
           * (the ambiguous '*'-for-bullet case!)
           */
          if (  prev_nonempty_line >= 0
-            && next_nonempty_line >= int(cmt_idx))
+            && next_nonempty_line >= static_cast<int>(cmt_idx))
          {
             std::wstring prev_line(line.get().cbegin(),
                                    line.get().cend());
-            std::wstring next_line(pc->str.get().cbegin() + next_nonempty_line,
-                                   pc->str.get().cend());
+            std::wstring next_line(pc->GetText().get().cbegin() + next_nonempty_line,
+                                   pc->GetText().get().cend());
 
             for (auto &&cmt_reflow_regex_map_entry : cmt_reflow_regex_map)
             {
@@ -2499,7 +2691,7 @@ static void output_comment_multi(Chunk *pc)
       }
       else
       {
-         LOG_FMT(LCONTTEXT, "%s(%d):ch is %d, %c\n", __func__, __LINE__, ch, char(ch));
+         LOG_FMT(LCONTTEXT, "%s(%d):ch is %d, %c\n", __func__, __LINE__, ch, static_cast<char>(ch));
       }
       line.append(ch);
 
@@ -2513,7 +2705,7 @@ static void output_comment_multi(Chunk *pc)
          }
          else
          {
-            LOG_FMT(LCONTTEXT, "%s(%d):ch is %d, %c\n", __func__, __LINE__, ch, char(ch));
+            LOG_FMT(LCONTTEXT, "%s(%d):ch is %d, %c\n", __func__, __LINE__, ch, static_cast<char>(ch));
          }
          line_count++;
          LOG_FMT(LCONTTEXT, "%s(%d):line_count is %zu\n", __func__, __LINE__, line_count);
@@ -2523,7 +2715,7 @@ static void output_comment_multi(Chunk *pc)
          {
             nl_end = true;
             line.pop_back();
-            cmt_trim_whitespace(line, pc->flags.test(PCF_IN_PREPROC));
+            cmt_trim_whitespace(line, pc->TestFlags(PCF_IN_PREPROC));
          }
 
          if (line_count == 1)
@@ -2571,7 +2763,7 @@ static void output_comment_multi(Chunk *pc)
                   }
                   // multiline comments can have empty lines with some spaces in them for alignment
                   // while adding * symbol and aligning them we don't want to keep these trailing spaces
-                  unc_text tmp = unc_text(cmt.cont_text);
+                  UncText tmp = UncText(cmt.cont_text);
                   cmt_trim_whitespace(tmp, false);
                   add_text(tmp);
                }
@@ -2652,7 +2844,7 @@ static void output_comment_multi(Chunk *pc)
                   else
                   {
                      // bug #653
-                     if (language_is_set(LANG_D))
+                     if (language_is_set(lang_flag_e::LANG_D))
                      {
                         // 0=no lead char present
                         add_text(cmt.cont_text);
@@ -2688,7 +2880,7 @@ static void output_comment_multi(Chunk *pc)
 } // output_comment_multi
 
 
-static bool kw_fcn_filename(Chunk *cmt, unc_text &out_txt)
+static bool kw_fcn_filename(Chunk const *cmt, UncText &out_txt)
 {
    UNUSED(cmt);
    out_txt.append(path_basename(cpd.filename.c_str()));
@@ -2696,15 +2888,16 @@ static bool kw_fcn_filename(Chunk *cmt, unc_text &out_txt)
 }
 
 
-static bool kw_fcn_class(Chunk *cmt, unc_text &out_txt)
+static bool kw_fcn_class(Chunk const *cmt, UncText &out_txt)
 {
-   Chunk *tmp = nullptr;
+   Chunk *tmp = Chunk::NullChunkPtr;
 
-   if (language_is_set(LANG_CPP | LANG_OC))
+   if ((  language_is_set(lang_flag_e::LANG_CPP)
+       || language_is_set(lang_flag_e::LANG_OC)))
    {
-      Chunk *fcn = get_next_function(cmt);
+      Chunk const *fcn = get_next_function(cmt);
 
-      if (chunk_is_token(fcn, CT_OC_MSG_DECL))
+      if (fcn->Is(E_Token::CT_OC_MSG_DECL))
       {
          tmp = get_prev_oc_class(cmt);
       }
@@ -2713,23 +2906,23 @@ static bool kw_fcn_class(Chunk *cmt, unc_text &out_txt)
          tmp = get_next_class(cmt);
       }
    }
-   else if (language_is_set(LANG_OC))
+   else if (language_is_set(lang_flag_e::LANG_OC))
    {
       tmp = get_prev_oc_class(cmt);
    }
 
-   if (tmp == nullptr)
+   if (tmp->IsNullChunk())
    {
       tmp = get_next_class(cmt);
    }
 
-   if (tmp != nullptr)
+   if (tmp->IsNotNullChunk())
    {
-      out_txt.append(tmp->str);
+      out_txt.append(tmp->GetText());
 
       while ((tmp = tmp->GetNext())->IsNotNullChunk())
       {
-         if (tmp->type != CT_DC_MEMBER)
+         if (tmp->IsNot(E_Token::CT_DC_MEMBER))
          {
             break;
          }
@@ -2738,7 +2931,7 @@ static bool kw_fcn_class(Chunk *cmt, unc_text &out_txt)
          if (tmp->IsNotNullChunk())
          {
             out_txt.append("::");
-            out_txt.append(tmp->str);
+            out_txt.append(tmp->GetText());
          }
       }
       return(true);
@@ -2747,38 +2940,38 @@ static bool kw_fcn_class(Chunk *cmt, unc_text &out_txt)
 } // kw_fcn_class
 
 
-static bool kw_fcn_message(Chunk *cmt, unc_text &out_txt)
+static bool kw_fcn_message(Chunk const *cmt, UncText &out_txt)
 {
-   Chunk *fcn = get_next_function(cmt);
+   Chunk const *fcn = get_next_function(cmt);
 
-   if (fcn == nullptr)
+   if (fcn->IsNullChunk())
    {
       return(false);
    }
-   out_txt.append(fcn->str);
+   out_txt.append(fcn->GetText());
 
-   Chunk *tmp  = fcn->GetNextNcNnl();
-   Chunk *word = Chunk::NullChunkPtr;
+   Chunk       *tmp  = fcn->GetNextNcNnl();
+   Chunk const *word = Chunk::NullChunkPtr;
 
    while (tmp->IsNotNullChunk())
    {
-      if (  chunk_is_token(tmp, CT_BRACE_OPEN)
-         || chunk_is_token(tmp, CT_SEMICOLON))
+      if (  tmp->Is(E_Token::CT_BRACE_OPEN)
+         || tmp->Is(E_Token::CT_SEMICOLON))
       {
          break;
       }
 
-      if (chunk_is_token(tmp, CT_OC_COLON))
+      if (tmp->Is(E_Token::CT_OC_COLON))
       {
          if (word->IsNotNullChunk())
          {
-            out_txt.append(word->str);
+            out_txt.append(word->GetText());
             word = Chunk::NullChunkPtr;
          }
          out_txt.append(":");
       }
 
-      if (chunk_is_token(tmp, CT_WORD))
+      if (tmp->Is(E_Token::CT_WORD))
       {
          word = tmp;
       }
@@ -2788,78 +2981,77 @@ static bool kw_fcn_message(Chunk *cmt, unc_text &out_txt)
 } // kw_fcn_message
 
 
-static bool kw_fcn_category(Chunk *cmt, unc_text &out_txt)
+static bool kw_fcn_category(Chunk const *cmt, UncText &out_txt)
 {
-   Chunk *category = get_prev_category(cmt);
+   Chunk const *category = get_prev_category(cmt);
 
-   if (category)
+   if (category->IsNotNullChunk())
    {
       out_txt.append('(');
-      out_txt.append(category->str);
+      out_txt.append(category->GetText());
       out_txt.append(')');
    }
    return(true);
 } // kw_fcn_category
 
 
-static bool kw_fcn_scope(Chunk *cmt, unc_text &out_txt)
+static bool kw_fcn_scope(Chunk const *cmt, UncText &out_txt)
 {
-   Chunk *scope = get_next_scope(cmt);
+   Chunk const *scope = get_next_scope(cmt);
 
-   if (scope)
+   if (scope->IsNotNullChunk())
    {
-      out_txt.append(scope->str);
+      out_txt.append(scope->GetText());
       return(true);
    }
    return(false);
 } // kw_fcn_scope
 
 
-static bool kw_fcn_function(Chunk *cmt, unc_text &out_txt)
+static bool kw_fcn_function(Chunk const *cmt, UncText &out_txt)
 {
-   Chunk *fcn = get_next_function(cmt);
+   Chunk const *fcn = get_next_function(cmt);
 
-   if (fcn)
+   if (fcn->IsNotNullChunk())
    {
-      if (get_chunk_parent_type(fcn) == CT_OPERATOR)
+      if (fcn->GetParentType() == E_Token::CT_OPERATOR)
       {
          out_txt.append("operator ");
       }
 
-      if (  fcn->prev != nullptr
-         && fcn->prev->type == CT_DESTRUCTOR)
+      if (fcn->GetPrev()->GetType() == E_Token::CT_DESTRUCTOR)
       {
          out_txt.append('~');
       }
-      out_txt.append(fcn->str);
+      out_txt.append(fcn->GetText());
       return(true);
    }
    return(false);
 }
 
 
-static bool kw_fcn_javaparam(Chunk *cmt, unc_text &out_txt)
+static bool kw_fcn_javaparam(Chunk const *cmt, UncText &out_txt)
 {
-   Chunk *fcn = get_next_function(cmt);
+   Chunk const *fcn = get_next_function(cmt);
 
-   if (fcn == nullptr)
+   if (fcn->IsNullChunk())
    {
       return(false);
    }
-   Chunk *fpo;
-   Chunk *fpc;
-   bool  has_param = true;
-   bool  need_nl   = false;
+   Chunk       *fpo;
+   Chunk const *fpc;
+   bool        has_param = true;
+   bool        need_nl   = false;
 
-   if (chunk_is_token(fcn, CT_OC_MSG_DECL))
+   if (fcn->Is(E_Token::CT_OC_MSG_DECL))
    {
-      Chunk *tmp = fcn->GetNextNcNnl();
+      Chunk const *tmp = fcn->GetNextNcNnl();
       has_param = false;
 
       while (tmp->IsNotNullChunk())
       {
-         if (  chunk_is_token(tmp, CT_BRACE_OPEN)
-            || chunk_is_token(tmp, CT_SEMICOLON))
+         if (  tmp->Is(E_Token::CT_BRACE_OPEN)
+            || tmp->Is(E_Token::CT_SEMICOLON))
          {
             break;
          }
@@ -2873,28 +3065,29 @@ static bool kw_fcn_javaparam(Chunk *cmt, unc_text &out_txt)
             need_nl = true;
             out_txt.append("@param");
             out_txt.append(" ");
-            out_txt.append(tmp->str);
+            out_txt.append(tmp->GetText());
             out_txt.append(" TODO");
          }
          has_param = false;
 
-         if (chunk_is_token(tmp, CT_PAREN_CLOSE))
+         if (tmp->Is(E_Token::CT_PAREN_CLOSE))
          {
             has_param = true;
          }
          tmp = tmp->GetNextNcNnl();
       }
-      fpo = fpc = Chunk::NullChunkPtr;
+      fpo = Chunk::NullChunkPtr;
+      fpc = Chunk::NullChunkPtr;
    }
    else
    {
-      fpo = fcn->GetNextType(CT_FPAREN_OPEN, fcn->level);
+      fpo = fcn->GetNextType(E_Token::CT_FPAREN_OPEN, fcn->GetLevel());
 
       if (fpo->IsNullChunk())
       {
          return(true);
       }
-      fpc = fpo->GetNextType(CT_FPAREN_CLOSE, fcn->level);
+      fpc = fpo->GetNextType(E_Token::CT_FPAREN_CLOSE, fcn->GetLevel());
 
       if (fpc->IsNullChunk())
       {
@@ -2915,7 +3108,7 @@ static bool kw_fcn_javaparam(Chunk *cmt, unc_text &out_txt)
          tmp = fpo->GetNextNcNnl();
 
          if (  (tmp == fpc->GetPrevNcNnl())
-            && chunk_is_str(tmp, "void"))
+            && tmp->IsString("void"))
          {
             has_param = false;
          }
@@ -2924,12 +3117,12 @@ static bool kw_fcn_javaparam(Chunk *cmt, unc_text &out_txt)
 
    if (has_param)
    {
-      Chunk *prev = Chunk::NullChunkPtr;
+      Chunk const *prev = Chunk::NullChunkPtr;
       tmp = fpo;
 
       while ((tmp = tmp->GetNext())->IsNotNullChunk())
       {
-         if (  chunk_is_token(tmp, CT_COMMA)
+         if (  tmp->Is(E_Token::CT_COMMA)
             || tmp == fpc)
          {
             if (need_nl)
@@ -2942,7 +3135,7 @@ static bool kw_fcn_javaparam(Chunk *cmt, unc_text &out_txt)
             if (prev->IsNotNullChunk())
             {
                out_txt.append(" ");
-               out_txt.append(prev->str);
+               out_txt.append(prev->GetText());
                out_txt.append(" TODO");
             }
             prev = Chunk::NullChunkPtr;
@@ -2953,7 +3146,7 @@ static bool kw_fcn_javaparam(Chunk *cmt, unc_text &out_txt)
             }
          }
 
-         if (chunk_is_token(tmp, CT_WORD))
+         if (tmp->Is(E_Token::CT_WORD))
          {
             prev = tmp;
          }
@@ -2964,14 +3157,14 @@ static bool kw_fcn_javaparam(Chunk *cmt, unc_text &out_txt)
 
    // For Objective-C we need to go to the previous chunk
    if (  tmp->IsNotNullChunk()
-      && get_chunk_parent_type(tmp) == CT_OC_MSG_DECL
-      && chunk_is_token(tmp, CT_PAREN_CLOSE))
+      && tmp->GetParentType() == E_Token::CT_OC_MSG_DECL
+      && tmp->Is(E_Token::CT_PAREN_CLOSE))
    {
       tmp = tmp->GetPrevNcNnl();
    }
 
    if (  tmp->IsNotNullChunk()
-      && !chunk_is_str(tmp, "void"))
+      && !tmp->IsString("void"))
    {
       if (need_nl)
       {
@@ -2983,20 +3176,20 @@ static bool kw_fcn_javaparam(Chunk *cmt, unc_text &out_txt)
 } // kw_fcn_javaparam
 
 
-static bool kw_fcn_fclass(Chunk *cmt, unc_text &out_txt)
+static bool kw_fcn_fclass(Chunk const *cmt, UncText &out_txt)
 {
-   Chunk *fcn = get_next_function(cmt);
+   Chunk const *fcn = get_next_function(cmt);
 
    if (!fcn)
    {
       return(false);
    }
 
-   if (fcn->flags.test(PCF_IN_CLASS))
+   if (fcn->TestFlags(PCF_IN_CLASS))
    {
       // if inside a class, we need to find to the class name
-      Chunk *tmp = fcn->GetPrevType(CT_BRACE_OPEN, fcn->level - 1);
-      tmp = tmp->GetPrevType(CT_CLASS, tmp->level);
+      Chunk const *tmp = fcn->GetPrevType(E_Token::CT_BRACE_OPEN, fcn->GetLevel() - 1);
+      tmp = tmp->GetPrevType(E_Token::CT_CLASS, tmp->GetLevel());
 
       if (tmp->IsNullChunk())
       {
@@ -3008,7 +3201,7 @@ static bool kw_fcn_fclass(Chunk *cmt, unc_text &out_txt)
       }
 
       while (  tmp->IsNotNullChunk()
-            && chunk_is_token(tmp->GetNextNcNnl(), CT_DC_MEMBER))
+            && tmp->GetNextNcNnl()->Is(E_Token::CT_DC_MEMBER))
       {
          tmp = tmp->GetNextNcNnl();
          tmp = tmp->GetNextNcNnl();
@@ -3016,26 +3209,26 @@ static bool kw_fcn_fclass(Chunk *cmt, unc_text &out_txt)
 
       if (tmp->IsNotNullChunk())
       {
-         out_txt.append(tmp->str);
+         out_txt.append(tmp->GetText());
          return(true);
       }
    }
    else
    {
       // if outside a class, we expect "CLASS::METHOD(...)"
-      Chunk *tmp = fcn->GetPrevNcNnl();
+      Chunk const *tmp = fcn->GetPrevNcNnl();
 
-      if (chunk_is_token(tmp, CT_OPERATOR))
+      if (tmp->Is(E_Token::CT_OPERATOR))
       {
          tmp = tmp->GetPrevNcNnl();
       }
 
       if (  tmp->IsNotNullChunk()
-         && (  chunk_is_token(tmp, CT_DC_MEMBER)
-            || chunk_is_token(tmp, CT_MEMBER)))
+         && (  tmp->Is(E_Token::CT_DC_MEMBER)
+            || tmp->Is(E_Token::CT_MEMBER)))
       {
          tmp = tmp->GetPrevNcNnl();
-         out_txt.append(tmp->str);
+         out_txt.append(tmp->GetText());
          return(true);
       }
    }
@@ -3043,7 +3236,7 @@ static bool kw_fcn_fclass(Chunk *cmt, unc_text &out_txt)
 } // kw_fcn_fclass
 
 
-static bool kw_fcn_year(Chunk *cmt, unc_text &out_txt)
+static bool kw_fcn_year(Chunk const *cmt, UncText &out_txt)
 {
    UNUSED(cmt);
    time_t now = time(nullptr);
@@ -3055,8 +3248,8 @@ static bool kw_fcn_year(Chunk *cmt, unc_text &out_txt)
 
 struct kw_subst_t
 {
-   const char *tag;
-   bool       (*func)(Chunk *cmt, unc_text &out_txt);
+   char const *tag;
+   bool       (*func)(Chunk const *cmt, UncText &out_txt);
 };
 
 
@@ -3078,13 +3271,13 @@ static void do_kw_subst(Chunk *pc)
 {
    for (const auto &kw : kw_subst_table)
    {
-      int idx = pc->str.find(kw.tag);
+      int idx = pc->GetText().find(kw.tag);
 
       if (idx < 0)
       {
          continue;
       }
-      unc_text tmp_txt;
+      UncText tmp_txt;
       tmp_txt.clear();
 
       if (kw.func(pc, tmp_txt))
@@ -3092,24 +3285,24 @@ static void do_kw_subst(Chunk *pc)
          // if the replacement contains '\n' we need to fix the lead
          if (tmp_txt.find("\n") >= 0)
          {
-            size_t nl_idx = pc->str.rfind("\n", idx);
+            size_t nl_idx = pc->GetText().rfind("\n", idx);
 
             if (nl_idx > 0)
             {
                // idx and nl_idx are both positive
-               unc_text nl_txt;
+               UncText nl_txt;
                nl_txt.append("\n");
                nl_idx++;
 
                while (  (nl_idx < static_cast<size_t>(idx))
-                     && !unc_isalnum(pc->str[nl_idx]))
+                     && !unc_isalnum(pc->GetText()[nl_idx]))
                {
-                  nl_txt.append(pc->str[nl_idx++]);
+                  nl_txt.append(pc->Text()[nl_idx++]);
                }
                tmp_txt.replace("\n", nl_txt);
             }
          }
-         pc->str.replace(kw.tag, tmp_txt);
+         pc->Text().replace(kw.tag, tmp_txt);
       }
    }
 } // do_kw_subst
@@ -3117,15 +3310,14 @@ static void do_kw_subst(Chunk *pc)
 
 static void output_comment_multi_simple(Chunk *pc)
 {
-   if (  pc == nullptr
-      && pc->IsNotNullChunk())
+   if (pc->IsNullChunk())
    {
       return;
    }
    cmt_reflow cmt;
 
-   LOG_FMT(LCONTTEXT, "%s(%d): Text() is '%s', type is %s, orig_col is %zu, column is %zu\n",
-           __func__, __LINE__, pc->Text(), get_token_name(pc->type), pc->orig_col, pc->column);
+   LOG_FMT(LCONTTEXT, "%s(%d): text is '%s', type is %s, orig col is %zu, column is %zu\n",
+           __func__, __LINE__, pc->GetLogText(), get_token_name(pc->GetType()), pc->GetOrigCol(), pc->GetColumn());
 
    output_cmt_start(cmt, pc);
 
@@ -3137,10 +3329,10 @@ static void output_comment_multi_simple(Chunk *pc)
    {
       int diff = 0;
 
-      if (chunk_is_newline(pc->GetPrev()))
+      if (pc->GetPrev()->IsNewline())
       {
          // The comment should be indented correctly
-         diff = pc->column - pc->orig_col;
+         diff = pc->GetColumn() - pc->GetOrigCol();
       }
       return(diff);
    }();
@@ -3149,26 +3341,26 @@ static void output_comment_multi_simple(Chunk *pc)
     * check for enable/disable processing comment strings that may
     * both be embedded within the same multi-line comment
     */
-   auto     disable_processing_cmt_idx = find_disable_processing_comment_marker(pc->str);
-   auto     enable_processing_cmt_idx  = find_enable_processing_comment_marker(pc->str);
+   auto    disable_processing_cmt_idx = find_disable_processing_comment_marker(pc->GetText());
+   auto    enable_processing_cmt_idx  = find_enable_processing_comment_marker(pc->GetText());
 
-   unc_text line;
-   size_t   line_count  = 0;
-   size_t   line_column = pc->column;
-   size_t   cmt_idx     = 0;
+   UncText line;
+   size_t  line_count  = 0;
+   size_t  line_column = pc->GetColumn();
+   size_t  cmt_idx     = 0;
 
    while (cmt_idx < pc->Len())
    {
-      int ch = pc->str[cmt_idx];
+      int ch = pc->GetText()[cmt_idx];
       cmt_idx++;
 
-      if (  cmt_idx > std::size_t(disable_processing_cmt_idx)
+      if (  cmt_idx > static_cast<size_t>(disable_processing_cmt_idx)
          && enable_processing_cmt_idx > disable_processing_cmt_idx)
       {
-         auto     length = enable_processing_cmt_idx - disable_processing_cmt_idx;
-         unc_text verbatim_text(pc->str,
-                                disable_processing_cmt_idx,
-                                length);
+         auto    length = enable_processing_cmt_idx - disable_processing_cmt_idx;
+         UncText verbatim_text(pc->GetText(),
+                               disable_processing_cmt_idx,
+                               length);
 
          add_text(verbatim_text);
 
@@ -3178,9 +3370,9 @@ static void output_comment_multi_simple(Chunk *pc)
           * check for additional enable/disable processing comment strings that may
           * both be embedded within the same multi-line comment
           */
-         disable_processing_cmt_idx = find_disable_processing_comment_marker(pc->str,
+         disable_processing_cmt_idx = find_disable_processing_comment_marker(pc->GetText(),
                                                                              enable_processing_cmt_idx);
-         enable_processing_cmt_idx = find_enable_processing_comment_marker(pc->str,
+         enable_processing_cmt_idx = find_enable_processing_comment_marker(pc->GetText(),
                                                                            enable_processing_cmt_idx);
 
          line.clear();
@@ -3207,7 +3399,7 @@ static void output_comment_multi_simple(Chunk *pc)
          }
          else
          {
-            LOG_FMT(LCONTTEXT, "%s(%d):ch is %d, %c\n", __func__, __LINE__, ch, char(ch));
+            LOG_FMT(LCONTTEXT, "%s(%d):ch is %d, %c\n", __func__, __LINE__, ch, static_cast<char>(ch));
          }
       }
 
@@ -3217,14 +3409,14 @@ static void output_comment_multi_simple(Chunk *pc)
          ch = '\n';
 
          if (  (cmt_idx < pc->Len())
-            && (pc->str[cmt_idx] == '\n'))
+            && (pc->GetText()[cmt_idx] == '\n'))
          {
             cmt_idx++;
          }
       }
-      LOG_FMT(LCONTTEXT, "%s(%d):Line is %s\n", __func__, __LINE__, line.c_str());
+      LOG_FMT(LCONTTEXT, "%s(%d):Line is %s\n", __func__, __LINE__, line.GetLogText());
       line.append(ch);
-      LOG_FMT(LCONTTEXT, "%s(%d):Line is %s\n", __func__, __LINE__, line.c_str());
+      LOG_FMT(LCONTTEXT, "%s(%d):Line is %s\n", __func__, __LINE__, line.GetLogText());
 
       // If we just hit an end of line OR we just hit end-of-comment...
       if (  ch == '\n'
@@ -3254,8 +3446,8 @@ static void output_comment_multi_simple(Chunk *pc)
                if (line_count > 1)
                {
                   // apply comment column shift without underflowing
-                  line_column = (  col_diff < 0
-                                && (cast_abs(line_column, col_diff) > line_column))
+                  line_column = (col_diff<0
+                                          && static_cast<size_t>(abs(col_diff))> line_column)
                                 ? 0 : line_column + col_diff;
                }
                cmt.column = line_column;
@@ -3271,69 +3463,69 @@ static void output_comment_multi_simple(Chunk *pc)
 } // output_comment_multi_simple
 
 
-static void generate_if_conditional_as_text(unc_text &dst, Chunk *ifdef)
+static void generate_if_conditional_as_text(UncText &dst, Chunk *ifdef)
 {
    int column = -1;
 
    dst.clear();
 
-   for (Chunk *pc = ifdef; pc != nullptr && pc->IsNotNullChunk(); pc = pc->GetNext())
+   for (Chunk const *pc = ifdef; pc->IsNotNullChunk(); pc = pc->GetNext())
    {
       if (column == -1)
       {
-         column = pc->column;
+         column = pc->GetColumn();
       }
 
-      if (  chunk_is_token(pc, CT_NEWLINE)
-         || chunk_is_token(pc, CT_COMMENT_MULTI)
-         || chunk_is_token(pc, CT_COMMENT_CPP))
+      if (  pc->Is(E_Token::CT_NEWLINE)
+         || pc->Is(E_Token::CT_COMMENT_MULTI)
+         || pc->Is(E_Token::CT_COMMENT_CPP))
       {
          break;
       }
-      else if (chunk_is_token(pc, CT_NL_CONT))
+      else if (pc->Is(E_Token::CT_NL_CONT))
       {
          dst   += ' ';
          column = -1;
       }
-      else if (  chunk_is_token(pc, CT_COMMENT)
-              || chunk_is_token(pc, CT_COMMENT_EMBED))
+      else if (  pc->Is(E_Token::CT_COMMENT)
+              || pc->Is(E_Token::CT_COMMENT_EMBED))
       {
       }
-      else // if (chunk_is_token(pc, CT_JUNK)) || else
+      else // if (pc->Is(E_Token::CT_JUNK)) || else
       {
-         for (int spacing = pc->column - column; spacing > 0; spacing--)
+         for (int spacing = pc->GetColumn() - column; spacing > 0; spacing--)
          {
             dst += ' ';
             column++;
          }
 
-         dst.append(pc->str);
+         dst.append(pc->GetText());
          column += pc->Len();
       }
    }
 } // generate_if_conditional_as_text
 
 
-void add_long_preprocessor_conditional_block_comment(void)
+void add_long_preprocessor_conditional_block_comment()
 {
-   Chunk *pp_start = nullptr;
-   Chunk *pp_end   = nullptr;
+   Chunk const *pp_start = Chunk::NullChunkPtr;
+   Chunk const *pp_end   = Chunk::NullChunkPtr;
 
    for (Chunk *pc = Chunk::GetHead(); pc->IsNotNullChunk(); pc = pc->GetNextNcNnl())
    {
       // just track the preproc level:
-      if (chunk_is_token(pc, CT_PREPROC))
+      if (pc->Is(E_Token::CT_PREPROC))
       {
          pp_end = pp_start = pc;
       }
 
-      if (  pc->type != CT_PP_IF
+      if (  pc->IsNot(E_Token::CT_PP_IF)
          || !pp_start)
       {
          continue;
       }
 #if 0
-      if (pc->flags.test(PCF_IN_PREPROC))
+      if (pc->TestFlags(PCF_IN_PREPROC))
       {
          continue;
       }
@@ -3348,38 +3540,43 @@ void add_long_preprocessor_conditional_block_comment(void)
       while ((tmp = tmp->GetNext())->IsNotNullChunk())
       {
          // just track the preproc level:
-         if (chunk_is_token(tmp, CT_PREPROC))
+         if (tmp->Is(E_Token::CT_PREPROC))
          {
             pp_end = tmp;
          }
 
-         if (chunk_is_newline(tmp))
+         if (tmp->IsNewline())
          {
-            nl_count += tmp->nl_count;
+            nl_count += tmp->GetNlCount();
          }
-         else if (  pp_end->pp_level == pp_start->pp_level
-                 && (  chunk_is_token(tmp, CT_PP_ENDIF)
-                    || ((chunk_is_token(br_open, CT_PP_IF)) ? (chunk_is_token(tmp, CT_PP_ELSE)) : 0)))
+         else if (  pp_end->GetPpLevel() == pp_start->GetPpLevel()
+                 && (  tmp->Is(E_Token::CT_PP_ENDIF)
+                    || ((br_open->Is(E_Token::CT_PP_IF)) ? (tmp->Is(E_Token::CT_PP_ELSE)) : 0)))
          {
             br_close = tmp;
 
-            LOG_FMT(LPPIF, "found #if / %s section on lines %zu and %zu, nl_count=%zu\n",
-                    (chunk_is_token(tmp, CT_PP_ENDIF) ? "#endif" : "#else"),
-                    br_open->orig_line, br_close->orig_line, nl_count);
+            LOG_FMT(LPPIF, "found #if / %s section on lines %zu and %zu, new line count=%zu\n",
+                    (tmp->Is(E_Token::CT_PP_ENDIF) ? "#endif" : "#else"),
+                    br_open->GetOrigLine(), br_close->GetOrigLine(), nl_count);
 
             // Found the matching #else or #endif - make sure a newline is next
             tmp = tmp->GetNext();
 
-            LOG_FMT(LPPIF, "next item type %d (is %s)\n",
-                    (tmp ? tmp->type : -1), (tmp ? chunk_is_newline(tmp) ? "newline"
-                                             : tmp->IsComment() ? "comment" : "other" : "---"));
+            if (tmp->IsNullChunk())
+            {
+               LOG_FMT(LPPIF, "next item is the null chunk\n");
+            }
+            else
+            {
+               LOG_FMT(LPPIF, "next item type is %s\n", get_token_name(tmp->GetType()));
+            }
 
             if (  tmp->IsNullChunk()
-               || chunk_is_token(tmp, CT_NEWLINE)) // chunk_is_newline(tmp))
+               || tmp->Is(E_Token::CT_NEWLINE)) // tmp->IsNewline())
             {
                size_t nl_min;
 
-               if (chunk_is_token(br_close, CT_PP_ENDIF))
+               if (br_close->Is(E_Token::CT_PP_ENDIF))
                {
                   log_rule_B("mod_add_long_ifdef_endif_comment");
                   nl_min = options::mod_add_long_ifdef_endif_comment();
@@ -3389,22 +3586,22 @@ void add_long_preprocessor_conditional_block_comment(void)
                   log_rule_B("mod_add_long_ifdef_else_comment");
                   nl_min = options::mod_add_long_ifdef_else_comment();
                }
-               const char *txt = !tmp ? "EOF" : ((chunk_is_token(tmp, CT_PP_ENDIF)) ? "#endif" : "#else");
-               LOG_FMT(LPPIF, "#if / %s section candidate for augmenting when over NL threshold %zu != 0 (nl_count=%zu)\n",
+               const char *txt = !tmp ? "EOF" : ((tmp->Is(E_Token::CT_PP_ENDIF)) ? "#endif" : "#else");
+               LOG_FMT(LPPIF, "#if / %s section candidate for augmenting when over NL threshold %zu != 0 (new line count=%zu)\n",
                        txt, nl_min, nl_count);
 
                if (  nl_min > 0
                   && nl_count > nl_min) // nl_count is 1 too large at all times as #if line was counted too
                {
                   // determine the added comment style
-                  E_Token style = (language_is_set(LANG_CPP)) ?
-                                  CT_COMMENT_CPP : CT_COMMENT;
+                  E_Token style = (language_is_set(lang_flag_e::LANG_CPP)) ?
+                                  E_Token::CT_COMMENT_CPP : E_Token::CT_COMMENT;
 
-                  unc_text str;
+                  UncText str;
                   generate_if_conditional_as_text(str, br_open);
 
-                  LOG_FMT(LPPIF, "#if / %s section over threshold %zu (nl_count=%zu) --> insert comment after the %s: %s\n",
-                          txt, nl_min, nl_count, txt, str.c_str());
+                  LOG_FMT(LPPIF, "#if / %s section over threshold %zu (new line count=%zu) --> insert comment after the %s: %s\n",
+                          txt, nl_min, nl_count, txt, str.GetLogText());
 
                   // Add a comment after the close brace
                   insert_comment_after(br_close, style, str);
@@ -3412,7 +3609,7 @@ void add_long_preprocessor_conditional_block_comment(void)
             }
 
             // checks both the #else and #endif for a given level, only then look further in the main loop
-            if (chunk_is_token(br_close, CT_PP_ENDIF))
+            if (br_close->Is(E_Token::CT_PP_ENDIF))
             {
                break;
             }

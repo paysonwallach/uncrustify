@@ -13,21 +13,21 @@
 
 
 //! Change virtual braces into real braces
-void do_braces(void);
+void do_braces();
 
 /**
  * See the preprocessor counterpart:
  *   add_long_preprocessor_conditional_block_comment
  * in output.cpp
  */
-void add_long_closebrace_comment(void);
+void add_long_closebrace_comment();
 
 
 /**
  * Adds a comment after the ref chunk
- * Returns the added chunk or nullptr
+ * Returns the added chunk or Chunk::NullChunkPtr
  */
-Chunk *insert_comment_after(Chunk *ref, E_Token cmt_type, const unc_text &cmt_text);
+Chunk *insert_comment_after(Chunk *ref, E_Token cmt_type, const UncText &cmt_text);
 
 
 #endif /* BRACES_H_INCLUDED */

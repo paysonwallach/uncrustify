@@ -15,6 +15,19 @@
 #include <string>
 
 
+bool unc_getcwd(std::string &cwd)
+{
+   char buf[MAX_PATH];
+
+   if (GetCurrentDirectoryA(sizeof(buf), buf) != 0)
+   {
+      cwd = buf;
+      return(true);
+   }
+   return(false);
+}
+
+
 bool unc_getenv(const char *name, std::string &str)
 {
    DWORD len = GetEnvironmentVariableA(name, NULL, 0);
@@ -27,19 +40,20 @@ bool unc_getenv(const char *name, std::string &str)
          return(false);
       }
    }
-   buf = (char *)malloc(len);
+   buf = reinterpret_cast<char *>(malloc(len));
 
-   if (buf)
+   if (buf != nullptr)
    {
-      len = GetEnvironmentVariableA(name, buf, len);
+      len      = GetEnvironmentVariableA(name, buf, len);
+      buf[len] = 0;
+
+      str = buf;
+      //printf("%s: name=%s len=%zu value=%s\n", __func__, name, len, str.c_str());
+      free(buf);
+
+      return(true);
    }
-   buf[len] = 0;
-
-   str = buf;
-   //printf("%s: name=%s len=%zu value=%s\n", __func__, name, len, str.c_str());
-   free(buf);
-
-   return(true);
+   return(false);
 }
 
 

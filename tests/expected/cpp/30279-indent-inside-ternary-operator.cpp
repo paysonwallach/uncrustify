@@ -1,12 +1,12 @@
 (tmp
-	? chunk_is_newline(tmp)
+	? tmp->IsNewline()
 		? "newline"
-		: chunk_is_comment(tmp)
+		: tmp->IsComment()
 			? "comment"
 			: "other"
-	: chunk_is_newline(tmp)
+	: tmp->IsNewline()
 		? "newline"
-		: chunk_is_comment(tmp)
+		: tmp->IsComment()
 			? "comment"
 			: "other");
 

@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 
 import argparse
-import git
+import git  # /usr/lib/python3/dist-packages/git/__init__.py
 import os
-import re
+import re  # Support for regular expressions (RE).
 import sys
+
+# use the variable DEBUG to get more output
+DEBUG = 1
 
 if sys.version_info[0] < 3:
     input = raw_input
@@ -24,10 +27,15 @@ def fatal(msg):
 # -----------------------------------------------------------------------------
 def get_version_str(repo, candidate=True, required=True):
     if candidate:
+        if DEBUG:
+            print('git.symbolic-ref("-q", "--short", "HEAD")')
         b = repo.git.symbolic_ref('-q', '--short', 'HEAD')
         m = re_branch.match(b)
         if m:
             return m.group(1)
+
+    if DEBUG:
+        print('git.describe("HEAD")')
 
     d = repo.git.describe('HEAD')
     m = re_desc.match(d)
@@ -74,13 +82,26 @@ def generate(repo, version, path, *args):
     import subprocess
 
     p = os.path.join(repo.working_tree_dir, path)
+
+    if version is None:
+        with open(p, 'r') as f:
+            content = f.read()
+            version = re.search(r'Uncrustify([a-z_]*)?-([0-9]+(\.[0-9]+)+(-[0-9]+)?)?(-?[0-9a-f]{6,})?', content)
+            if version:
+                version = version.group()
+            else:
+                version = 'Uncrustify'
+            version += "-dev"
+    else:
+        version = 'Uncrustify-{}'.format(version)
+
     with open(p, 'w') as f:
         c = subprocess.check_call(args, stdout=f)
     print('Created: {}'.format(path))
 
     alter(repo, path,
-          r'Uncrustify-[0-9.]+(-[0-9]+-[0-9a-f]+(-dirty)?)?',
-          r'Uncrustify-{}'.format(version))
+           r'Uncrustify([a-z_]*)?-([0-9]+(\.[0-9]+)+(-[0-9]+)?)?(-?[0-9a-f]{6,})?(-?dirty)?(-dev)?',
+           r'{}'.format(version))
 
 
 # -----------------------------------------------------------------------------
@@ -97,29 +118,47 @@ def cmd_init(repo, args):
         else:
             v = input('Version to be created? ')
 
+    if DEBUG:
+        print('The value for version is', v)
+
     if not re_version.match(v):
         fatal('Bad version number, \'{}\''.format(v))
+    if DEBUG:
+        s = 'git.checkout(-b, "uncrustify-RC-{}")'.format(v)
+        print(s)
 
     repo.git.checkout('-b', 'uncrustify-RC-{}'.format(v))
 
 
 # -----------------------------------------------------------------------------
 def cmd_update(repo, args):
-    v = get_version_str(repo)
+    if args.keepversion:
+        print('Not updating version info in docs')
+        v = None
+    else:
+        v = get_version_str(repo)
     c = get_option_count(args.executable)
 
-    alter(repo, 'CMakeLists.txt',
-          r'(set *[(] *UNCRUSTIFY_VERSION +")[0-9.]+',
-          r'\g<1>{}'.format(v))
-    alter(repo, 'package.json',
-          r'("version" *): *"[0-9.]+"',
-          r'\g<1>: "{}"'.format(v))
-    alter(repo, 'README.md',
-          r'[0-9]+ configurable options as of version [0-9.]+',
-          r'{} configurable options as of version {}'.format(c, v))
-    alter(repo, 'documentation/htdocs/index.html',
-          r'[0-9]+ configurable options as of version [0-9.]+',
-          r'{} configurable options as of version {}'.format(c, v))
+    if not args.keepversion:
+        alter(repo, 'CMakeLists.txt',
+              r'(set *[(] *UNCRUSTIFY_VERSION +")[0-9.]+',
+              r'\g<1>{}'.format(v))
+        alter(repo, 'package.json',
+              r'("version" *): *"[0-9.]+"',
+              r'\g<1>: "{}"'.format(v))
+        alter(repo, 'README.md',
+              r'[0-9]+ configurable options as of version [0-9.]+',
+              r'{} configurable options as of version {}'.format(c, v))
+        alter(repo, 'documentation/htdocs/index.html',
+              r'[0-9]+ configurable options as of version [0-9.]+',
+              r'{} configurable options as of version {}'.format(c, v))
+    else:
+        alter(repo, 'README.md',
+              r'[0-9]+ configurable options as of version ',
+              r'{} configurable options as of version '.format(c))
+        alter(repo, 'documentation/htdocs/index.html',
+              r'[0-9]+ configurable options as of version ',
+              r'{} configurable options as of version '.format(c))
 
     generate(repo, v, 'etc/defaults.cfg',
              args.executable, '--show-config')
@@ -130,6 +169,15 @@ def cmd_update(repo, args):
     generate(repo, v, 'etc/uigui_uncrustify.ini',
              args.executable, '--universalindent')
 
+    # For 'optiondocs' command, update universalindent.cfg also, since
+    # unit tests verify it.
+    if args.keepversion:
+        # Needs to be kept in sync with test_cli_options.py
+        generate(repo, v, 'tests/cli/output/universalindent.cfg',
+                 args.executable, '--universalindent')
+        alter(repo, 'tests/cli/output/universalindent.cfg',
+              r'(version=U.+)|(\(\d+\))|(\r)',
+              r'');
 
 # -----------------------------------------------------------------------------
 def cmd_commit(repo, args):
@@ -146,6 +194,18 @@ def cmd_commit(repo, args):
 # -----------------------------------------------------------------------------
 def cmd_tag(repo, args):
     import uuid
+
+    # user_name = repo.config_reader().get_value('user', 'name')
+    url = repo.config_reader().get_value('remote "origin"', 'url')
+    print('The user account is', url)
+    print('you need an "admin" account')
+    v = input('Do you really want to use this account? (yes/no) ')
+    if len(v) == 0:
+        fatal("0 End")
+    else:
+        print(v)
+        if v != "yes":
+            fatal("2 End")
 
     # Determine location of remote repository
     if args.ssh:
@@ -206,8 +266,14 @@ def main():
                              help='version number for release')
 
     parser_update = subparsers.add_parser(
+        'optiondocs', help='update documentation from options')
+    parser_update.set_defaults(func=cmd_update, keepversion=True)
+    parser_update.add_argument('executable',
+                               help='path to uncrustify executable')
+
+    parser_update = subparsers.add_parser(
         'update', help='update version information')
-    parser_update.set_defaults(func=cmd_update)
+    parser_update.set_defaults(func=cmd_update, keepversion=False)
     parser_update.add_argument('executable',
                                help='path to uncrustify executable')
 

@@ -15,7 +15,7 @@ using namespace uncrustify;
 
 
 //! Detect spacing options
-static void detect_space_options(void);
+static void detect_space_options();
 
 
 class sp_votes
@@ -34,20 +34,20 @@ public:
    //! Figure out the result of the vote and maybe update *m_av
    ~sp_votes();
 
-   void vote(Chunk *first, Chunk *second);
+   void vote(Chunk const *first, Chunk const *second);
 };
 
 
-void sp_votes::vote(Chunk *first, Chunk *second)
+void sp_votes::vote(Chunk const *first, Chunk const *second)
 {
-   if (  first == nullptr
-      || chunk_is_newline(first)
-      || second == nullptr
-      || chunk_is_newline(second))
+   if (  first->IsNullChunk()
+      || first->IsNewline()
+      || second->IsNullChunk()
+      || second->IsNewline())
    {
       return;
    }
-   int col_dif = second->column - (first->column + first->Len());
+   int col_dif = second->GetColumn() - first->GetColumnEnd();
 
    if (col_dif == 0)
    {
@@ -91,11 +91,11 @@ sp_votes::~sp_votes()
 }
 
 
-// generates "vote_sp_xxx" variable name from uncrustify option name "UO_xxx"
+// generates "vote_sp_xxx" variable name from uncrustify option name "options::xxx()"
 #define SP_VOTE_VAR(x)    sp_votes vote_ ## x(options::x)
 
 
-static void detect_space_options(void)
+static void detect_space_options()
 {
    SP_VOTE_VAR(sp_arith);
    SP_VOTE_VAR(sp_before_assign);
@@ -110,10 +110,13 @@ static void detect_space_options(void)
    SP_VOTE_VAR(sp_before_ptr_star);
    SP_VOTE_VAR(sp_before_unnamed_ptr_star);
    SP_VOTE_VAR(sp_between_ptr_star);
+   SP_VOTE_VAR(sp_between_ptr_ref);
    SP_VOTE_VAR(sp_after_ptr_star);
    SP_VOTE_VAR(sp_after_byref);
    SP_VOTE_VAR(sp_before_byref);
    SP_VOTE_VAR(sp_before_unnamed_byref);
+   SP_VOTE_VAR(sp_before_ref_qualifier);
+   SP_VOTE_VAR(sp_after_ref_qualifier);
    SP_VOTE_VAR(sp_after_type);
    SP_VOTE_VAR(sp_template_angle);
    SP_VOTE_VAR(sp_before_angle);
@@ -148,9 +151,9 @@ static void detect_space_options(void)
    SP_VOTE_VAR(sp_try_brace);
    SP_VOTE_VAR(sp_getset_brace);
 
-   Chunk *prev = Chunk::GetHead();
-   Chunk *pc   = prev->GetNext();
-   Chunk *next;
+   Chunk const *prev = Chunk::GetHead();
+   Chunk       *pc   = prev->GetNext();
+   Chunk       *next;
 
    while (pc->IsNotNullChunk())
    {
@@ -161,16 +164,16 @@ static void detect_space_options(void)
          break;
       }
 
-      if (  chunk_is_token(pc, CT_ARITH)
-         || chunk_is_token(pc, CT_SHIFT))
+      if (  pc->Is(E_Token::CT_ARITH)
+         || pc->Is(E_Token::CT_SHIFT))
       {
          vote_sp_arith.vote(pc, next);
          vote_sp_arith.vote(prev, pc);
       }
 
-      if (chunk_is_token(pc, CT_ASSIGN))
+      if (pc->Is(E_Token::CT_ASSIGN))
       {
-         if (!pc->flags.test(PCF_IN_ENUM))
+         if (!pc->TestFlags(PCF_IN_ENUM))
          {
             vote_sp_before_assign.vote(prev, pc);
             vote_sp_after_assign.vote(pc, next);
@@ -182,65 +185,65 @@ static void detect_space_options(void)
          }
       }
 
-      if (chunk_is_token(pc, CT_SQUARE_OPEN))
+      if (pc->Is(E_Token::CT_SQUARE_OPEN))
       {
          vote_sp_before_square.vote(prev, pc);
          vote_sp_inside_square.vote(pc, next);
       }
 
-      if (chunk_is_token(pc, CT_SQUARE_CLOSE))
+      if (pc->Is(E_Token::CT_SQUARE_CLOSE))
       {
          vote_sp_inside_square.vote(prev, pc);
       }
 
-      if (chunk_is_token(pc, CT_TSQUARE))
+      if (pc->Is(E_Token::CT_TSQUARE))
       {
          vote_sp_before_squares.vote(prev, pc);
       }
 
-      if (chunk_is_token(pc, CT_BOOL))
+      if (pc->Is(E_Token::CT_BOOL))
       {
          vote_sp_bool.vote(prev, pc);
          vote_sp_bool.vote(pc, next);
       }
 
-      if (chunk_is_token(pc, CT_COMPARE))
+      if (pc->Is(E_Token::CT_COMPARE))
       {
          vote_sp_compare.vote(prev, pc);
          vote_sp_compare.vote(pc, next);
       }
 
-      if (chunk_is_token(pc, CT_PAREN_CLOSE))
+      if (pc->Is(E_Token::CT_PAREN_CLOSE))
       {
          vote_sp_inside_paren.vote(prev, pc);
       }
 
-      if (chunk_is_token(pc, CT_PAREN_OPEN))
+      if (pc->Is(E_Token::CT_PAREN_OPEN))
       {
          vote_sp_inside_paren.vote(pc, next);
       }
 
-      if (  (  chunk_is_paren_open(pc)
-            && chunk_is_paren_open(next))
-         || (  chunk_is_paren_close(pc)
-            && chunk_is_paren_close(next)))
+      if (  (  pc->IsParenOpen()
+            && next->IsParenOpen())
+         || (  pc->IsParenClose()
+            && next->IsParenClose()))
       {
          vote_sp_paren_paren.vote(pc, next);
       }
 
-      if (  chunk_is_paren_close(pc)
-         && chunk_is_token(next, CT_BRACE_OPEN))
+      if (  pc->IsParenClose()
+         && next->Is(E_Token::CT_BRACE_OPEN))
       {
          vote_sp_paren_brace.vote(pc, next);
       }
 
-      if (chunk_is_token(pc, CT_PTR_TYPE))
+      if (pc->Is(E_Token::CT_PTR_TYPE))
       {
-         if (chunk_is_token(prev, CT_PTR_TYPE))
+         if (prev->Is(E_Token::CT_PTR_TYPE))
          {
             vote_sp_between_ptr_star.vote(prev, pc);
          }
-         else if (next->type != CT_WORD)
+         else if (next->IsNot(E_Token::CT_WORD))
          {
             vote_sp_before_unnamed_ptr_star.vote(prev, pc);
          }
@@ -249,17 +252,22 @@ static void detect_space_options(void)
             vote_sp_before_ptr_star.vote(prev, pc);
          }
 
-         if (CharTable::IsKw1(next->str[0]))
+         if (CharTable::IsKw1(next->GetText()[0]))
          {
             vote_sp_after_ptr_star.vote(pc, next);
          }
       }
 
-      if (chunk_is_token(pc, CT_BYREF))
+      if (pc->Is(E_Token::CT_BYREF))
       {
-         if (next->type != CT_WORD)
+         if (next->IsNot(E_Token::CT_WORD))
          {
             vote_sp_before_unnamed_byref.vote(prev, pc);
+         }
+
+         if (prev->Is(E_Token::CT_PTR_TYPE))
+         {
+            vote_sp_between_ptr_ref.vote(prev, pc);
          }
          else
          {
@@ -268,18 +276,24 @@ static void detect_space_options(void)
          vote_sp_after_byref.vote(pc, next);
       }
 
-      if (  pc->type != CT_PTR_TYPE
-         && (  chunk_is_token(prev, CT_QUALIFIER)
-            || chunk_is_token(prev, CT_TYPE)))
+      if (pc->Is(E_Token::CT_REF_QUALIFIER))
+      {
+         vote_sp_before_ref_qualifier.vote(prev, pc);
+         vote_sp_after_ref_qualifier.vote(pc, next);
+      }
+
+      if (  pc->IsNot(E_Token::CT_PTR_TYPE)
+         && (  prev->Is(E_Token::CT_QUALIFIER)
+            || prev->Is(E_Token::CT_TYPE)))
       {
          vote_sp_after_type.vote(prev, pc);
       }
 
-      if (chunk_is_token(pc, CT_ANGLE_OPEN))
+      if (pc->Is(E_Token::CT_ANGLE_OPEN))
       {
          vote_sp_inside_angle.vote(pc, next);
 
-         if (chunk_is_token(prev, CT_TEMPLATE))
+         if (prev->Is(E_Token::CT_TEMPLATE))
          {
             vote_sp_template_angle.vote(prev, pc);
          }
@@ -289,16 +303,16 @@ static void detect_space_options(void)
          }
       }
 
-      if (chunk_is_token(pc, CT_ANGLE_CLOSE))
+      if (pc->Is(E_Token::CT_ANGLE_CLOSE))
       {
          vote_sp_inside_angle.vote(prev, pc);
 
-         if (chunk_is_paren_open(next))
+         if (next->IsParenOpen())
          {
             vote_sp_angle_paren.vote(prev, pc);
          }
-         else if (  chunk_is_token(next, CT_WORD)
-                 || CharTable::IsKw1(next->str[0]))
+         else if (  next->Is(E_Token::CT_WORD)
+                 || CharTable::IsKw1(next->GetText()[0]))
          {
             vote_sp_angle_word.vote(prev, pc);
          }
@@ -308,17 +322,17 @@ static void detect_space_options(void)
          }
       }
 
-      if (chunk_is_token(pc, CT_SPAREN_OPEN))
+      if (pc->Is(E_Token::CT_SPAREN_OPEN))
       {
          vote_sp_before_sparen.vote(prev, pc);
          vote_sp_inside_sparen.vote(pc, next);
       }
 
-      if (chunk_is_token(pc, CT_SPAREN_CLOSE))
+      if (pc->Is(E_Token::CT_SPAREN_CLOSE))
       {
          vote_sp_inside_sparen.vote(prev, pc);
 
-         if (chunk_is_token(next, CT_BRACE_OPEN))
+         if (next->Is(E_Token::CT_BRACE_OPEN))
          {
             vote_sp_sparen_brace.vote(pc, next);
          }
@@ -328,25 +342,25 @@ static void detect_space_options(void)
          }
       }
 
-      if (chunk_is_token(pc, CT_SEMICOLON))
+      if (pc->Is(E_Token::CT_SEMICOLON))
       {
-         if (get_chunk_parent_type(pc) == CT_FOR)
+         if (pc->GetParentType() == E_Token::CT_FOR)
          {
-            if (chunk_is_token(prev, CT_SPAREN_OPEN))
+            if (prev->Is(E_Token::CT_SPAREN_OPEN))
             {
                // empty, ie for (;;)
                //               ^ is prev
                //                ^ is pc
                vote_sp_before_semi_for_empty.vote(prev, pc);
             }
-            else if (chunk_is_token(next, CT_SPAREN_CLOSE))
+            else if (next->Is(E_Token::CT_SPAREN_CLOSE))
             {
                // empty, ie for (;;)
                //                 ^ is pc
                //                  ^ is next
                vote_sp_after_semi_for_empty.vote(pc, next);
             }
-            else if (prev->type != CT_SEMICOLON)
+            else if (prev->IsNot(E_Token::CT_SEMICOLON))
             {
                // empty, ie for (; i < 8;)
                //                       ^ is pc
@@ -355,7 +369,7 @@ static void detect_space_options(void)
                vote_sp_before_semi_for.vote(prev, pc);
             }
          }
-         else if (chunk_is_token(prev, CT_VBRACE_OPEN))
+         else if (prev->Is(E_Token::CT_VBRACE_OPEN))
          {
             vote_sp_special_semi.vote(prev->GetPrev(), pc);
          }
@@ -365,42 +379,42 @@ static void detect_space_options(void)
          }
       }
 
-      if (chunk_is_token(pc, CT_COMMA))
+      if (pc->Is(E_Token::CT_COMMA))
       {
          vote_sp_before_comma.vote(prev, pc);
          vote_sp_after_comma.vote(pc, next);
       }
 
-      if (chunk_is_token(pc, CT_CLASS_COLON))
+      if (pc->Is(E_Token::CT_CLASS_COLON))
       {
          vote_sp_before_class_colon.vote(prev, pc);
          vote_sp_after_class_colon.vote(pc, next);
       }
 
-      if (chunk_is_token(pc, CT_BRACE_OPEN))
+      if (pc->Is(E_Token::CT_BRACE_OPEN))
       {
-         if (chunk_is_token(prev, CT_ELSE))
+         if (prev->Is(E_Token::CT_ELSE))
          {
             vote_sp_else_brace.vote(prev, pc);
          }
-         else if (chunk_is_token(prev, CT_CATCH))
+         else if (prev->Is(E_Token::CT_CATCH))
          {
             vote_sp_catch_brace.vote(prev, pc);
          }
-         else if (chunk_is_token(prev, CT_FINALLY))
+         else if (prev->Is(E_Token::CT_FINALLY))
          {
             vote_sp_catch_brace.vote(prev, pc);
          }
-         else if (chunk_is_token(prev, CT_TRY))
+         else if (prev->Is(E_Token::CT_TRY))
          {
             vote_sp_catch_brace.vote(prev, pc);
          }
-         else if (chunk_is_token(prev, CT_GETSET))
+         else if (prev->Is(E_Token::CT_GETSET))
          {
             vote_sp_catch_brace.vote(prev, pc);
          }
 
-         if (chunk_is_token(next, CT_BRACE_CLOSE))
+         if (next->Is(E_Token::CT_BRACE_CLOSE))
          {
             vote_sp_inside_braces_empty.vote(pc, next);
          }
@@ -410,19 +424,19 @@ static void detect_space_options(void)
          }
       }
 
-      if (chunk_is_token(pc, CT_BRACE_CLOSE))
+      if (pc->Is(E_Token::CT_BRACE_CLOSE))
       {
          vote_sp_inside_braces.vote(prev, pc);
 
-         if (chunk_is_token(next, CT_ELSE))
+         if (next->Is(E_Token::CT_ELSE))
          {
             vote_sp_brace_else.vote(pc, next);
          }
-         else if (chunk_is_token(next, CT_CATCH))
+         else if (next->Is(E_Token::CT_CATCH))
          {
             vote_sp_brace_catch.vote(pc, next);
          }
-         else if (chunk_is_token(next, CT_FINALLY))
+         else if (next->Is(E_Token::CT_FINALLY))
          {
             vote_sp_brace_finally.vote(pc, next);
          }
@@ -433,7 +447,7 @@ static void detect_space_options(void)
 } // detect_space_options
 
 
-void detect_options(void)
+void detect_options()
 {
    detect_space_options();
 }

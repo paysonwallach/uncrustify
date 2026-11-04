@@ -1,6 +1,6 @@
 /**
  * @file compat.h
- * prototypes for compat_xxx.c
+ * prototypes for compat_xxx.cpp
  *
  * @author  Ben Gardner
  * @license GPL v2+
@@ -9,13 +9,13 @@
 #define COMPAT_H_INCLUDED
 
 #include "uncrustify_types.h"
+#include <string>
 
+bool unc_getcwd(std::string &cwd);
 
 bool unc_getenv(const char *name, std::string &str);
 
-
 bool unc_homedir(std::string &home);
-
 
 /*
  * even if we prefer the format %zu, we have to change to %lu
